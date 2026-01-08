@@ -9,6 +9,9 @@ import librosa
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 
+from src.structure_analyzer import StructureAnalyzer
+from src.harmonic_analyzer import HarmonicAnalyzer
+
 
 @dataclass
 class TransitionPoint:
@@ -41,6 +44,8 @@ class SmartTransitionFinder:
     def __init__(self, sr: int = 44100, hop_length: int = 512):
         self.sr = sr
         self.hop_length = hop_length
+        self.structure_analyzer = StructureAnalyzer(sr=sr, hop_length=hop_length)
+        self.harmonic_analyzer = HarmonicAnalyzer()
     
     def find_best_transition_pair(self,
                                   song_a_path: str,

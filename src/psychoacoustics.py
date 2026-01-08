@@ -147,13 +147,21 @@ class PsychoacousticAnalyzer:
         
         LUFS is more accurate than RMS because it uses perceptual weighting.
         """
+        # Use sample if audio is too long (for speed)
+        max_samples = 60 * self.sr  # 60 seconds max
+        if len(y) > max_samples:
+            y = y[:max_samples]
+        
         # ITU-R BS.1770 K-weighting filter
         # Pre-filter: high-pass at 38Hz
         # RLB filter: +4dB at 1.5kHz, -2dB at 8kHz
         
         # High-pass filter at 38Hz
-        sos_hp = signal.butter(2, 38, btype='high', fs=self.sr, output='sos')
-        y_hp = signal.sosfilt(sos_hp, y)
+        if len(y) > 1024:  # Need enough samples for filter
+            sos_hp = signal.butter(2, 38, btype='high', fs=self.sr, output='sos')
+            y_hp = signal.sosfilt(sos_hp, y)
+        else:
+            y_hp = y
         
         # K-weighting filter (simplified approximation)
         # Boost around 1.5kHz, cut around 8kHz

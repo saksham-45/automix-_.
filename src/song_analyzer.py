@@ -11,6 +11,11 @@ from typing import Dict, List, Optional, Tuple
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import new advanced modules
+from src.psychoacoustics import PsychoacousticAnalyzer
+from src.harmonic_analyzer import HarmonicAnalyzer
+from src.structure_analyzer import StructureAnalyzer
+
 
 class SongAnalyzer:
     """
@@ -21,6 +26,11 @@ class SongAnalyzer:
     def __init__(self, sample_rate: int = 44100, hop_length: int = 512):
         self.sr = sample_rate
         self.hop_length = hop_length
+        
+        # Initialize advanced analyzers
+        self.psychoacoustics = PsychoacousticAnalyzer(sr=sample_rate)
+        self.harmonic_analyzer = HarmonicAnalyzer()
+        self.structure_analyzer = StructureAnalyzer(sr=sample_rate, hop_length=hop_length)
         
     def analyze(self, audio_path: str) -> Dict:
         """
@@ -51,6 +61,27 @@ class SongAnalyzer:
             "stereo": self._analyze_stereo(y, sr),
             "embeddings": self._compute_embeddings(y, sr)
         }
+        
+        # Add advanced analysis
+        print("  Adding psychoacoustic analysis...")
+        analysis["psychoacoustics"] = {
+            "loudness_lufs": self.psychoacoustics.analyze_loudness_lufs(y),
+            "auditory_scene": self.psychoacoustics.analyze_auditory_scene(y)
+        }
+        
+        print("  Adding harmonic analysis (Camelot Wheel)...")
+        camelot_info = self.harmonic_analyzer.detect_key_camelot(y)
+        analysis["harmony"]["camelot"] = camelot_info["camelot"]
+        analysis["harmony"]["camelot_number"] = camelot_info["camelot_number"]
+        analysis["harmony"]["camelot_letter"] = camelot_info["camelot_letter"]
+        analysis["harmony"]["chord_progression"] = self.harmonic_analyzer.analyze_chord_progression(y)
+        
+        print("  Adding structural analysis (phrases, sections)...")
+        structure_advanced = self.structure_analyzer.analyze_structure(y)
+        analysis["structure"]["phrases"] = structure_advanced.get("phrases", [])
+        analysis["structure"]["sections_advanced"] = structure_advanced.get("sections", [])
+        analysis["structure"]["best_mix_in_points"] = structure_advanced.get("best_mix_in_points", [])
+        analysis["structure"]["best_mix_out_points"] = structure_advanced.get("best_mix_out_points", [])
         
         print(f"✓ Analysis complete: {duration:.1f}s")
         return analysis

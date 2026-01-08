@@ -71,7 +71,7 @@ class AdvancedBeatMatcher:
         # Detect tempo with high precision
         tempo, beats = librosa.beat.beat_track(
             y=y, sr=self.sr, hop_length=self.hop_length,
-            units='time', start_bpm=120, std_bpm=2
+            units='time', start_bpm=120
         )
         
         beat_times = np.array(beats)
