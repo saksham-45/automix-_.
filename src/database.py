@@ -109,6 +109,30 @@ class MusicDatabase:
         conn.commit()
         conn.close()
     
+    def save_mix_metadata(self, mix_id: str, title: str = None, dj: str = None,
+                          genre: str = None, duration_sec: float = None,
+                          source_url: str = None):
+        """Save mix metadata to database."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT OR REPLACE INTO mixes (
+                mix_id, title, dj, genre, duration_sec, source_url, analyzed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            mix_id,
+            title,
+            dj,
+            genre,
+            duration_sec,
+            source_url,
+            datetime.now().isoformat()
+        ))
+        
+        conn.commit()
+        conn.close()
+    
     def save_song_analysis(self, song_id: str, analysis: Dict[str, Any], 
                           analysis_json_path: Optional[str] = None):
         """Save song analysis to database."""

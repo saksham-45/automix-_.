@@ -1,0 +1,24 @@
+{
+  "model_path": "models/decision_nn.pt",
+  "test_data_path": "data/training_splits/test.json",
+  "num_samples": 306,
+  "metrics": {
+    "technique_accuracy": 1.0,
+    "technique_precision": [
+      0.58984375,
+      0.52
+    ],
+    "technique_recall": [
+      0.8628571428571429,
+      0.1984732824427481
+    ],
+    "technique_f1": [
+      0.7006960556844548,
+      0.287292817679558
+    ],
+    "bass_swap_accuracy": 0.5784313725490197,
+    "duration_mae": 0.3492235839366913,
+    "duration_rmse": 0.5427703857421875,
+    "duration_mape": 10.023801803588867
+  }
+}
