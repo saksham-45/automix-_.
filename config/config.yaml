@@ -1,0 +1,88 @@
+# Configuration for DJ Transition Analysis System
+
+analysis:
+  # Song analysis settings
+  song:
+    sample_rate: 44100
+    hop_length: 512
+    n_fft: 2048
+    n_mels: 128
+    n_mfcc: 20
+    
+    # Feature extraction windows
+    tempo_window_sec: 10
+    tempo_hop_sec: 5
+    energy_window_sec: 1.0
+    spectral_window_sec: 0.5
+    
+    # Structure analysis
+    structure_method: "scluster"  # Options: "scluster", "olda", "cnmf"
+    
+    # Vocal detection
+    vocal_detection_threshold: 0.5
+    
+  # Transition detection settings
+  transition:
+    # Novelty detection
+    novelty_pre_max: 10
+    novelty_post_max: 10
+    novelty_pre_avg: 10
+    novelty_post_avg: 10
+    novelty_delta: 0.1
+    novelty_wait: 50
+    
+    # Minimum transition duration (seconds)
+    min_transition_duration: 4.0
+    max_transition_duration: 64.0
+    
+    # Source separation (for transition analysis)
+    use_source_separation: true
+    separation_model: "htdemucs"  # Options: "htdemucs", "mdx_extra"
+    
+  # Transition analysis settings
+  transition_analysis:
+    # Volume curve resolution
+    volume_curve_window_ms: 100
+    
+    # EQ analysis frequency bands
+    eq_bands:
+      sub_bass: [20, 60]
+      bass: [60, 250]
+      low_mid: [250, 500]
+      mid: [500, 2000]
+      high_mid: [2000, 6000]
+      high: [6000, 20000]
+    
+    # Technique detection thresholds
+    bass_swap_threshold_db: -12
+    filter_sweep_threshold_hz: 200
+    echo_detection_rt60_threshold_ms: 500
+
+database:
+  path: "database/transitions.db"
+  echo: false  # SQLAlchemy echo mode
+
+storage:
+  # Output directories
+  songs_dir: "data/songs"
+  mixes_dir: "data/mixes"
+  transitions_dir: "data/transitions"
+  
+  # Compression
+  compress_json: false  # Use gzip compression for JSON files
+
+audio:
+  # Default audio loading settings
+  mono: true  # Convert to mono for analysis
+  duration_limit: null  # None = analyze full file, or set seconds
+
+fingerprinting:
+  # Audio fingerprinting for track identification
+  enabled: false  # Set to true if using fingerprinting service
+  service: "acrcloud"  # Options: "acrcloud", "dejavu", "shazam"
+  api_key: null  # Set in .env file
+
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file: "logs/analysis.log"
+
