@@ -9,6 +9,7 @@ import librosa
 import json
 import time
 import os
+from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 from src.smart_transition_finder import SmartTransitionFinder, TransitionPair
@@ -21,6 +22,7 @@ from src.dynamic_processor import DynamicProcessor
 from src.transition_strategist import TransitionStrategist
 from src.crossfade_engine import CrossfadeEngine
 from src.quality_assessor import QualityAssessor
+from src.stem_separator import StemSeparator
 
 # Debug logging helper
 DEBUG_LOG_PATH = '/Users/saksham/untitled folder 7/.cursor/debug.log'
@@ -86,6 +88,43 @@ class SmartMixer:
         self.transition_strategist = TransitionStrategist()
         self.crossfade_engine = CrossfadeEngine(sr=sr)
         self.quality_assessor = QualityAssessor(sr=sr)
+        
+        # Load stem separation config
+        try:
+            import yaml
+            config_path = Path(__file__).parent.parent / 'config' / 'config.yaml'
+            if config_path.exists():
+                with open(config_path) as f:
+                    config = yaml.safe_load(f)
+                stem_config = config.get('analysis', {}).get('stem_separation', {})
+                self.stem_separation_enabled = stem_config.get('enabled', True)
+                self.stem_model = stem_config.get('model', 'htdemucs')
+                self.separate_stems = stem_config.get('separate_stems', ['drums', 'bass'])
+                self.drums_fade_ratio = stem_config.get('drums_fade_ratio', 0.25)
+                self.bass_fade_ratio = stem_config.get('bass_fade_ratio', 0.5)
+            else:
+                # Defaults
+                self.stem_separation_enabled = True
+                self.stem_model = 'htdemucs'
+                self.separate_stems = ['drums', 'bass']
+                self.drums_fade_ratio = 0.25
+                self.bass_fade_ratio = 0.5
+        except Exception as e:
+            # Fallback to defaults
+            self.stem_separation_enabled = True
+            self.stem_model = 'htdemucs'
+            self.separate_stems = ['drums', 'bass']
+            self.drums_fade_ratio = 0.25
+            self.bass_fade_ratio = 0.5
+        
+        # Initialize stem separator (lazy - only if enabled)
+        self.stem_separator = None
+        if self.stem_separation_enabled:
+            try:
+                self.stem_separator = StemSeparator(model_name=self.stem_model)
+            except Exception as e:
+                print(f"  ⚠ Stem separation not available: {e}")
+                self.stem_separation_enabled = False
         
         #region agent log
         init_time = time.time() - init_start
@@ -269,6 +308,81 @@ class SmartMixer:
         with open(log_path, 'a') as f:
             f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"smart_mixer.py:230","message":"Segments extracted","data":{"seg_a_len":len(seg_a),"seg_b_len":len(seg_b),"seg_a_shape":str(seg_a.shape),"seg_b_shape":str(seg_b.shape),"seg_a_rms":seg_a_rms,"seg_b_rms":seg_b_rms,"seg_a_max":seg_a_max,"seg_b_max":seg_b_max,"seg_a_zeros":seg_a_zeros,"seg_b_zeros":seg_b_zeros},"timestamp":int(time.time()*1000)}) + '\n')
         #endregion
+        
+        # Stem separation for smooth transitions (prevent drums/bass from carrying over)
+        if self.stem_separation_enabled and self.stem_separator is not None:
+            print("  Separating stems to fade out heavy instruments...")
+            try:
+                #region agent log
+                stem_start = time.time()
+                with open(log_path, 'a') as f:
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"STEM","location":"smart_mixer.py:312","message":"Starting stem separation","data":{"seg_a_len":len(seg_a)},"timestamp":int(time.time()*1000)}) + '\n')
+                #endregion
+                
+                # Separate stems from song A (outgoing track)
+                seg_a_stems = self.stem_separator.separate_segment(seg_a, self.sr)
+                
+                #region agent log
+                stem_time = time.time() - stem_start
+                with open(log_path, 'a') as f:
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"STEM","location":"smart_mixer.py:318","message":"Stem separation complete","data":{"time_sec":stem_time,"stems_available":list(seg_a_stems.keys())},"timestamp":int(time.time()*1000)}) + '\n')
+                #endregion
+                
+                # Create fast fade curves for drums and bass
+                n_samples = len(seg_a)
+                drums_fade = self.crossfade_engine.create_fast_fade(n_samples, fade_out_ratio=self.drums_fade_ratio)
+                bass_fade = self.crossfade_engine.create_fast_fade(n_samples, fade_out_ratio=self.bass_fade_ratio)
+                
+                # Apply fades to stems
+                seg_a_processed = np.zeros_like(seg_a)
+                
+                # Process drums with fast fade
+                if 'drums' in seg_a_stems and 'drums' in self.separate_stems:
+                    # Ensure fade curve matches audio shape
+                    if drums_fade.ndim == 1:
+                        drums_fade_2d = drums_fade[:, np.newaxis]  # [samples, 1]
+                    else:
+                        drums_fade_2d = drums_fade
+                    # Ensure shapes match
+                    if seg_a_stems['drums'].shape[1] == drums_fade_2d.shape[1] or drums_fade_2d.shape[1] == 1:
+                        drums_faded = seg_a_stems['drums'] * drums_fade_2d
+                    else:
+                        drums_faded = seg_a_stems['drums'] * drums_fade[:, np.newaxis]
+                    seg_a_processed += drums_faded
+                
+                # Process bass with fade
+                if 'bass' in seg_a_stems and 'bass' in self.separate_stems:
+                    # Ensure fade curve matches audio shape
+                    if bass_fade.ndim == 1:
+                        bass_fade_2d = bass_fade[:, np.newaxis]  # [samples, 1]
+                    else:
+                        bass_fade_2d = bass_fade
+                    # Ensure shapes match
+                    if seg_a_stems['bass'].shape[1] == bass_fade_2d.shape[1] or bass_fade_2d.shape[1] == 1:
+                        bass_faded = seg_a_stems['bass'] * bass_fade_2d
+                    else:
+                        bass_faded = seg_a_stems['bass'] * bass_fade[:, np.newaxis]
+                    seg_a_processed += bass_faded
+                
+                # Keep other elements (vocals, other instruments) with normal processing
+                if 'other' in seg_a_stems:
+                    seg_a_processed += seg_a_stems['other']
+                if 'vocals' in seg_a_stems:
+                    seg_a_processed += seg_a_stems['vocals']
+                
+                # Replace seg_a with processed version
+                seg_a = seg_a_processed
+                
+                #region agent log
+                with open(log_path, 'a') as f:
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"STEM","location":"smart_mixer.py:340","message":"Stems processed and recombined","data":{"seg_a_rms_after":float(np.sqrt(np.mean(seg_a**2)))},"timestamp":int(time.time()*1000)}) + '\n')
+                #endregion
+                
+                print("  ✓ Stems separated and drums/bass faded out")
+            except Exception as e:
+                print(f"  ⚠ Stem separation failed: {e}")
+                print("  → Continuing with original audio")
+                # Continue with original seg_a if separation fails
         
         # Apply dynamic EQ if needed
         if clash_score > 0.3:

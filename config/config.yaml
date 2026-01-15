@@ -39,6 +39,14 @@ analysis:
     use_source_separation: true
     separation_model: "htdemucs"  # Options: "htdemucs", "mdx_extra"
     
+  # Stem separation for smooth transitions
+  stem_separation:
+    enabled: true
+    model: "htdemucs"
+    separate_stems: ["drums", "bass"]  # Which stems to separate and fade
+    drums_fade_ratio: 0.25  # Fade out drums in first 25% of transition
+    bass_fade_ratio: 0.5    # Fade out bass in first 50% of transition
+    
   # Transition analysis settings
   transition_analysis:
     # Volume curve resolution

@@ -101,6 +101,45 @@ class CrossfadeEngine:
         
         return fade_out, fade_in
     
+    def create_fast_fade(self, n_samples: int, fade_out_ratio: float = 0.25) -> np.ndarray:
+        """
+        Create aggressive fade curve that drops to near-zero quickly.
+        
+        Used for fading out drums/bass in first portion of transition.
+        
+        Args:
+            n_samples: Number of samples
+            fade_out_ratio: Ratio of samples to fade out (0.25 = fade in first 25%)
+        
+        Returns:
+            Fade curve array (starts at 1.0, drops to ~0.01 in fade_out_ratio)
+        """
+        fade_out_samples = int(n_samples * fade_out_ratio)
+        fade_out_samples = max(1, min(fade_out_samples, n_samples))
+        
+        # Create exponential fade for smooth but fast drop
+        t = np.linspace(0, 1, fade_out_samples)
+        # Exponential curve: starts at 1, drops to 0.01
+        fade_curve = 0.01 + (0.99 * np.exp(-5 * t))  # Fast exponential decay
+        
+        # Create full curve
+        full_curve = np.ones(n_samples) * 0.01  # Start at minimum
+        full_curve[:fade_out_samples] = fade_curve
+        
+        # Smooth the transition point to avoid clicks
+        if fade_out_samples < n_samples:
+            # Smooth the last few samples of fade
+            smooth_len = min(100, fade_out_samples // 4)
+            if smooth_len > 0:
+                smooth_region = np.linspace(
+                    fade_curve[-smooth_len] if len(fade_curve) >= smooth_len else 0.01,
+                    0.01,
+                    smooth_len
+                )
+                full_curve[fade_out_samples-smooth_len:fade_out_samples] = smooth_region
+        
+        return np.clip(full_curve, 0.01, 1.0)
+    
     def create_lufs_matched_curves(self,
                                   y_a: np.ndarray,
                                   y_b: np.ndarray,

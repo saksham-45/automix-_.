@@ -6,3 +6,4 @@ matplotlib>=3.7.0
 soundfile>=0.12.0
 torch>=2.0.0
 yt-dlp>=2023.0.0
+demucs>=4.0.0
