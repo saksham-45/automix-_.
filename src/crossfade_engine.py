@@ -50,6 +50,57 @@ class CrossfadeEngine:
         
         return fade_out, fade_in
     
+    def create_gradual_crossfade(self, n_samples: int, overlap_ratio: float = 0.75) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Create extra-gradual, smooth crossfade curves to prevent instrument conflicts.
+        
+        Uses a very gentle, extended fade that ensures:
+        - Outgoing track fades out subtly and gradually
+        - Incoming track starts very quiet and picks up smoothly
+        - No sudden volume changes that cause instrument conflicts
+        
+        Args:
+            n_samples: Number of samples in transition
+            overlap_ratio: How much overlap (0.75 = balanced gradual fade)
+        """
+        t = np.linspace(0, 1, n_samples)
+        
+        # Equal-power crossfade curves (maintains constant perceived loudness)
+        # Outgoing: smooth cosine fade from 1.0 to 0.0
+        fade_out = np.sqrt(0.5 * (1 + np.cos(np.pi * t)))
+        
+        # Incoming: smooth cosine fade from 0.0 to 1.0
+        fade_in = np.sqrt(0.5 * (1 - np.cos(np.pi * t)))
+        
+        # Apply extra smoothing with Gaussian filter for ultra-smooth curves
+        from scipy.ndimage import gaussian_filter1d
+        sigma = min(400, max(100, n_samples / 30))  # Reasonable smoothing
+        fade_out = gaussian_filter1d(fade_out, sigma=sigma)
+        fade_in = gaussian_filter1d(fade_in, sigma=sigma)
+        
+        # Ensure smooth boundaries (don't let fade_out go to exactly 0, fade_in start at exactly 0)
+        # Keep small tails for smoothness
+        fade_out = np.maximum(fade_out, 0.005)  # Minimum 0.5% at end
+        fade_in = np.maximum(fade_in, 0.005)    # Minimum 0.5% at start
+        
+        # Re-normalize to maintain equal-power after smoothing
+        total_power = fade_out**2 + fade_in**2
+        normalization = np.sqrt(np.maximum(total_power, 0.01))
+        fade_out = fade_out / normalization
+        fade_in = fade_in / normalization
+        
+        # Final smooth boundaries - very gradual tail-off
+        tail_len = int(n_samples * 0.02)  # Last 2% very gradual
+        if tail_len > 0:
+            fade_out[-tail_len:] = np.linspace(fade_out[-tail_len], 0.01, tail_len)
+            fade_in[:tail_len] = np.linspace(0.01, fade_in[tail_len], tail_len)
+        
+        # Final clip to [0, 1]
+        fade_out = np.clip(fade_out, 0, 1)
+        fade_in = np.clip(fade_in, 0, 1)
+        
+        return fade_out, fade_in
+    
     def create_lufs_matched_curves(self,
                                   y_a: np.ndarray,
                                   y_b: np.ndarray,
@@ -169,12 +220,45 @@ class CrossfadeEngine:
         if vol_b.ndim == 1:
             vol_b = vol_b[:, np.newaxis]
         
+        #region agent log
+        import json
+        import time
+        import os
+        log_path = '/Users/saksham/untitled folder 7/.cursor/debug.log'
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)  # Ensure directory exists
+        # Test hypothesis D: Log volume application
+        y_a_rms_before = float(np.sqrt(np.mean(y_a[:n_samples]**2))) if n_samples > 0 else 0
+        y_b_rms_before = float(np.sqrt(np.mean(y_b[:n_samples]**2))) if n_samples > 0 else 0
+        vol_a_applied = vol_a[:n_samples] if vol_a.ndim == 2 else vol_a[:n_samples, 0] if vol_a.ndim > 1 else vol_a[:n_samples]
+        vol_b_applied = vol_b[:n_samples] if vol_b.ndim == 2 else vol_b[:n_samples, 0] if vol_b.ndim > 1 else vol_b[:n_samples]
+        vol_a_avg = float(np.mean(np.abs(vol_a_applied))) if len(vol_a_applied) > 0 else 0
+        vol_b_avg = float(np.mean(np.abs(vol_b_applied))) if len(vol_b_applied) > 0 else 0
+        with open(log_path, 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"crossfade_engine.py:223","message":"Before mixing in apply_crossfade","data":{"n_samples":n_samples,"y_a_rms_before":y_a_rms_before,"y_b_rms_before":y_b_rms_before,"vol_a_avg":vol_a_avg,"vol_b_avg":vol_b_avg,"vol_a_min":float(np.min(vol_a_applied)) if len(vol_a_applied) > 0 else 0,"vol_a_max":float(np.max(vol_a_applied)) if len(vol_a_applied) > 0 else 0,"vol_b_min":float(np.min(vol_b_applied)) if len(vol_b_applied) > 0 else 0,"vol_b_max":float(np.max(vol_b_applied)) if len(vol_b_applied) > 0 else 0},"timestamp":int(time.time()*1000)}) + '\n')
+        #endregion
+        
         mixed = y_a[:n_samples] * vol_a[:n_samples] + y_b[:n_samples] * vol_b[:n_samples]
+        
+        #region agent log
+        # Test hypothesis D: Check if mixing worked correctly
+        mixed_rms_after = float(np.sqrt(np.mean(mixed**2))) if n_samples > 0 else 0
+        mixed_max_after = float(np.max(np.abs(mixed))) if n_samples > 0 else 0
+        # Calculate expected RMS if volumes were applied correctly
+        expected_rms = float(np.sqrt(np.mean((y_a[:n_samples] * vol_a[:n_samples])**2) + np.mean((y_b[:n_samples] * vol_b[:n_samples])**2))) if n_samples > 0 else 0
+        with open(log_path, 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"crossfade_engine.py:230","message":"After mixing in apply_crossfade","data":{"mixed_rms":mixed_rms_after,"mixed_max":mixed_max_after,"expected_rms":expected_rms,"n_samples":n_samples},"timestamp":int(time.time()*1000)}) + '\n')
+        #endregion
         
         # Normalize to prevent clipping
         max_val = np.max(np.abs(mixed))
         if max_val > 0.95:
             mixed = mixed * (0.95 / max_val)
+        
+        #region agent log
+        if max_val > 0.95:
+            with open(log_path, 'a') as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"crossfade_engine.py:238","message":"Normalization applied","data":{"max_val_before":max_val,"normalization_factor":0.95/max_val,"mixed_max_after":float(np.max(np.abs(mixed)))},"timestamp":int(time.time()*1000)}) + '\n')
+        #endregion
         
         return mixed
     

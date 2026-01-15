@@ -53,9 +53,18 @@ class PsychoacousticAnalyzer:
         Returns:
             Dict with masking analysis
         """
+        # Limit to 10 seconds max for speed
+        max_samples = 10 * self.sr
+        if len(y) > max_samples:
+            y = y[:max_samples]
+        
+        # Use smaller FFT for faster computation
+        n_fft_fast = 1024  # Smaller FFT
+        hop_length_fast = 256  # Larger hop = fewer frames
+        
         # Compute STFT
-        S = np.abs(librosa.stft(y, n_fft=self.n_fft, hop_length=self.hop_length))
-        freqs = librosa.fft_frequencies(sr=self.sr, n_fft=self.n_fft)
+        S = np.abs(librosa.stft(y, n_fft=n_fft_fast, hop_length=hop_length_fast))
+        freqs = librosa.fft_frequencies(sr=self.sr, n_fft=n_fft_fast)
         
         # Convert to Bark scale
         bark = 13 * np.arctan(0.00076 * freqs) + 3.5 * np.arctan((freqs / 7500) ** 2)
@@ -66,14 +75,17 @@ class PsychoacousticAnalyzer:
         # If masker provided, calculate how it masks the signal
         masker_mask = None
         if masker is not None:
-            S_masker = np.abs(librosa.stft(masker, n_fft=self.n_fft, hop_length=self.hop_length))
+            # Limit masker sample too
+            if len(masker) > max_samples:
+                masker = masker[:max_samples]
+            S_masker = np.abs(librosa.stft(masker, n_fft=n_fft_fast, hop_length=hop_length_fast))
             masker_mask = self._calculate_masker_effect(S, S_masker, bark)
         
         return {
             'masking_threshold_db': masking_threshold.tolist(),
             'critical_bands': self.bark_bands.tolist(),
             'masker_effect': masker_mask.tolist() if masker_mask is not None else None,
-            'masked_frequencies': self._identify_masked_frequencies(S, masking_threshold)
+            'masked_frequencies': self._identify_masked_frequencies(S, masking_threshold, freqs)
         }
     
     def _calculate_masking_threshold(self, 
@@ -81,36 +93,33 @@ class PsychoacousticAnalyzer:
                                      bark: np.ndarray) -> np.ndarray:
         """
         Calculate simultaneous masking threshold using spreading function.
+        OPTIMIZED: Simplified calculation for speed.
         """
-        # Simplified masking model
-        # Each frequency component spreads energy to nearby critical bands
+        # Simplified masking model - use mean over time for speed
+        # Average magnitude over time frames
+        magnitude_mean = np.mean(magnitude, axis=1)  # Average across time
         
-        n_bins = magnitude.shape[0]
-        n_frames = magnitude.shape[1]
-        threshold = np.zeros((n_bins, n_frames))
+        n_bins = len(magnitude_mean)
+        threshold = np.zeros(n_bins)
         
         # Convert magnitude to dB
-        magnitude_db = librosa.amplitude_to_db(magnitude, ref=np.max)
+        magnitude_db = librosa.amplitude_to_db(magnitude_mean + 1e-10, ref=np.max(magnitude_mean))
         
-        for i in range(n_bins):
-            if magnitude_db[i].max() < -60:  # Too quiet to mask
+        # Simplified: only process every 4th bin for speed
+        for i in range(0, n_bins, 4):
+            if magnitude_db[i] < -60:  # Too quiet to mask
                 continue
             
-            # Spreading function (simplified)
-            # Masking extends to nearby critical bands
-            spread_bark = 25 + 75 * (1 + 1.4 * (bark[i] / 10) ** 2) ** 0.69
-            
-            for j in range(n_bins):
-                bark_diff = abs(bark[j] - bark[i])
-                if bark_diff < spread_bark:
-                    # Spreading function decreases with distance
-                    attenuation = -23 - 0.2 * bark_diff
-                    threshold[j] = np.maximum(
-                        threshold[j],
-                        magnitude_db[i] + attenuation
-                    )
+            # Simple spreading: mask nearby 5 bins
+            spread = 5
+            for j in range(max(0, i - spread), min(n_bins, i + spread + 1)):
+                distance = abs(j - i)
+                attenuation = -20 - 5 * distance  # Simplified attenuation
+                threshold[j] = max(threshold[j], magnitude_db[i] + attenuation)
         
-        return threshold
+        # Expand threshold back to full size
+        threshold_full = np.tile(threshold[:, np.newaxis], (1, magnitude.shape[1]))
+        return threshold_full
     
     def _calculate_masker_effect(self,
                                  masked_spec: np.ndarray,
@@ -127,16 +136,22 @@ class PsychoacousticAnalyzer:
     
     def _identify_masked_frequencies(self,
                                     magnitude: np.ndarray,
-                                    threshold: np.ndarray) -> List[float]:
+                                    threshold: np.ndarray,
+                                    freqs: np.ndarray) -> List[float]:
         """Identify which frequencies are likely masked."""
         magnitude_db = librosa.amplitude_to_db(magnitude, ref=np.max)
         
         # Frequencies where signal is below threshold
-        masked = magnitude_db < threshold - 10  # 10dB below threshold = masked
+        # Handle 1D or 2D threshold
+        if threshold.ndim == 1:
+            threshold_2d = threshold[:, np.newaxis]
+        else:
+            threshold_2d = threshold
+            
+        masked = magnitude_db < threshold_2d - 10  # 10dB below threshold = masked
         masked_ratio = np.mean(masked, axis=1)
         
         # Return frequencies with >50% masked
-        freqs = librosa.fft_frequencies(sr=self.sr, n_fft=self.n_fft)
         masked_freqs = freqs[masked_ratio > 0.5].tolist()
         
         return masked_freqs
@@ -264,9 +279,38 @@ class PsychoacousticAnalyzer:
         Returns:
             Dict with clash prediction and recommendations
         """
+        import time, json
+        log_path = '/Users/saksham/untitled folder 7/.cursor/debug.log'
+        
+        #region agent log
+        clash_start = time.time()
+        with open(log_path, 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"psychoacoustics.py:186","message":"predict_frequency_clash start","data":{"y_a_len":len(y_a),"y_b_len":len(y_b)},"timestamp":int(time.time()*1000)}) + '\n')
+        #endregion
+        
+        # Use samples if audio is too long (for speed) - already sampled in caller
+        # No need to sample again here
+        
+        #region agent log
+        mask_start = time.time()
+        with open(log_path, 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"psychoacoustics.py:197","message":"Starting masking analysis","data":{"y_a_len":len(y_a),"y_b_len":len(y_b)},"timestamp":int(time.time()*1000)}) + '\n')
+        #endregion
+        
         # Analyze masking for both signals
         mask_a = self.analyze_frequency_masking(y_a)
+        
+        #region agent log
+        with open(log_path, 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"psychoacoustics.py:203","message":"Mask A complete","data":{"time_sec":time.time()-mask_start},"timestamp":int(time.time()*1000)}) + '\n')
+        #endregion
+        
         mask_b = self.analyze_frequency_masking(y_b)
+        
+        #region agent log
+        with open(log_path, 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"psychoacoustics.py:207","message":"Mask B complete","data":{"time_sec":time.time()-mask_start},"timestamp":int(time.time()*1000)}) + '\n')
+        #endregion
         
         # Calculate mutual masking
         S_a = np.abs(librosa.stft(y_a, n_fft=self.n_fft, hop_length=self.hop_length))
@@ -312,6 +356,12 @@ class PsychoacousticAnalyzer:
         bass_clash = np.sum([band_energies_a[i] * band_energies_b[i] for i in bass_bands])
         if bass_clash > 0.4:
             recommendations.append('Bass frequencies clashing - perform bass swap')
+        
+        #region agent log
+        clash_total = time.time() - clash_start
+        with open(log_path, 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"psychoacoustics.py:349","message":"predict_frequency_clash complete","data":{"total_time_sec":clash_total},"timestamp":int(time.time()*1000)}) + '\n')
+        #endregion
         
         return {
             'clash_score': float(clash_score),  # 0-1, higher = more clash
