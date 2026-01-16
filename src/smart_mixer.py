@@ -322,16 +322,38 @@ class SmartMixer:
                 # Separate stems from song A (outgoing track)
                 seg_a_stems = self.stem_separator.separate_segment(seg_a, self.sr)
                 
+                # Also separate stems from song B to detect when vocals start
+                seg_b_stems = self.stem_separator.separate_segment(seg_b, self.sr)
+                
                 #region agent log
                 stem_time = time.time() - stem_start
                 with open(log_path, 'a') as f:
                     f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"STEM","location":"smart_mixer.py:318","message":"Stem separation complete","data":{"time_sec":stem_time,"stems_available":list(seg_a_stems.keys())},"timestamp":int(time.time()*1000)}) + '\n')
                 #endregion
                 
+                # Detect when Song B's vocals start
+                vocal_start_time_ratio = self._detect_vocal_start_time(
+                    seg_b_stems.get('vocals', None), 
+                    len(seg_b)
+                )
+                
+                #region agent log
+                with open(log_path, 'a') as f:
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"VOCAL","location":"smart_mixer.py:325","message":"Vocal start detected","data":{"vocal_start_ratio":vocal_start_time_ratio},"timestamp":int(time.time()*1000)}) + '\n')
+                #endregion
+                
                 # Create fast fade curves for drums and bass
                 n_samples = len(seg_a)
                 drums_fade = self.crossfade_engine.create_fast_fade(n_samples, fade_out_ratio=self.drums_fade_ratio)
                 bass_fade = self.crossfade_engine.create_fast_fade(n_samples, fade_out_ratio=self.bass_fade_ratio)
+                
+                # Create aggressive vocal fade for Song A vocals
+                # Fade gradually until Song B vocals start, then drop suddenly at end
+                vocal_fade = self.crossfade_engine.create_aggressive_vocal_fade(
+                    n_samples,
+                    vocal_start_time_ratio=vocal_start_time_ratio,
+                    aggressive_drop_ratio=0.9  # Sudden drop in last 10%
+                )
                 
                 # Apply fades to stems
                 seg_a_processed = np.zeros_like(seg_a)
@@ -364,11 +386,23 @@ class SmartMixer:
                         bass_faded = seg_a_stems['bass'] * bass_fade[:, np.newaxis]
                     seg_a_processed += bass_faded
                 
-                # Keep other elements (vocals, other instruments) with normal processing
+                # Process vocals with aggressive fade
+                if 'vocals' in seg_a_stems:
+                    if vocal_fade.ndim == 1:
+                        vocal_fade_2d = vocal_fade[:, np.newaxis]
+                    else:
+                        vocal_fade_2d = vocal_fade
+                    # Ensure shapes match
+                    if seg_a_stems['vocals'].shape[1] == vocal_fade_2d.shape[1] or vocal_fade_2d.shape[1] == 1:
+                        vocals_faded = seg_a_stems['vocals'] * vocal_fade_2d
+                    else:
+                        vocals_faded = seg_a_stems['vocals'] * vocal_fade[:, np.newaxis]
+                    seg_a_processed += vocals_faded
+                    print(f"  ✓ Vocals faded aggressively (Song B vocals start at {vocal_start_time_ratio*100:.1f}% of transition)")
+                
+                # Keep other elements with normal processing (no special fade)
                 if 'other' in seg_a_stems:
                     seg_a_processed += seg_a_stems['other']
-                if 'vocals' in seg_a_stems:
-                    seg_a_processed += seg_a_stems['vocals']
                 
                 # Replace seg_a with processed version
                 seg_a = seg_a_processed
@@ -702,92 +736,54 @@ class SmartMixer:
                                        y_b: np.ndarray,
                                        analysis_a: Dict,
                                        analysis_b: Dict) -> TransitionPair:
-        """Find optimal transition points - STRICTLY end of song A and start of song B."""
-        from src.smart_transition_finder import TransitionPoint
+        """
+        Find optimal transition points using intelligent multi-candidate evaluation.
+        Uses quality prediction to find the best transition points, while still
+        favoring end-of-A and start-of-B as high-priority candidates.
+        """
+        import tempfile
+        import os
         
-        # STRICT: Use end of song A and start of song B
-        duration_a = len(y_a) / self.sr
-        duration_b = len(y_b) / self.sr
+        # Save temporary audio files for transition finder
+        temp_dir = tempfile.mkdtemp()
+        temp_a = os.path.join(temp_dir, 'temp_song_a.wav')
+        temp_b = os.path.join(temp_dir, 'temp_song_b.wav')
         
-        # Song A: Use the very end (last 30 seconds max, but prefer as close to end as possible)
-        # For transition, we want the transition to END at the end of song A
-        # So point_a should be close to duration_a
-        point_a = duration_a  # Exact end of song A
-        
-        # Song B: Use the very start (first few seconds, but aligned to beat)
-        # Find first beat after a short skip (to avoid silence/intro noise)
-        import librosa
-        tempo_b, beat_frames = librosa.beat.beat_track(y=y_b[:min(30 * self.sr, len(y_b))], 
-                                                       sr=self.sr, 
-                                                       hop_length=self.hop_length)
-        beat_times = librosa.frames_to_time(beat_frames, sr=self.sr, hop_length=self.hop_length)
-        
-        # Use first beat that's after 2 seconds (skip intro silence)
-        point_b = 0.0
-        for bt in beat_times:
-            if bt >= 2.0:  # Start after 2 seconds to skip intro silence
-                point_b = bt
-                break
-        
-        # If no beat found after 2 seconds, use 2 seconds
-        if point_b == 0.0:
-            point_b = 2.0
-        
-        # Ensure point_a is valid (within song bounds)
-        # For transition, we extract BACKWARDS from point_a, so point_a should be at or near the end
-        point_a = min(point_a, duration_a)
-        
-        # Align point_a to nearest beat at the end of song A
-        tempo_a, beat_frames_a = librosa.beat.beat_track(y=y_a[max(0, int((duration_a - 30) * self.sr)):], 
-                                                         sr=self.sr, 
-                                                         hop_length=self.hop_length)
-        beat_times_a = librosa.frames_to_time(beat_frames_a, sr=self.sr, hop_length=self.hop_length)
-        # Adjust beat times to absolute time in song
-        beat_times_a = beat_times_a + max(0, duration_a - 30)
-        
-        # Find last beat before or at point_a
-        if len(beat_times_a) > 0:
-            # Use the last beat
-            aligned_point_a = beat_times_a[-1]
-            # But ensure we don't go beyond song end
-            point_a = min(aligned_point_a, duration_a)
-        else:
-            # Fallback: use last 5 seconds
-            point_a = max(0, duration_a - 5)
-        
-        # Calculate harmonic compatibility for scoring
-        harmonic = self.harmonic_analyzer.score_transition_harmonics(
-            analysis_a['key'], analysis_b['key'],
-            analysis_a['tempo'], analysis_b['tempo']
-        )
-        
-        # Create transition pair
-        best_pair = TransitionPair(
-            song_a_point=TransitionPoint(
-                time_sec=point_a,
-                beat_aligned=True,
-                energy=0.5,
-                energy_trend='falling',
-                structural_label='outro',
-                score=1.0,  # High score since we're using optimal end/start
-                beat_position=0
-            ),
-            song_b_point=TransitionPoint(
-                time_sec=point_b,
-                beat_aligned=True,
-                energy=0.5,
-                energy_trend='rising',
-                structural_label='intro',
-                score=1.0,
-                beat_position=0
-            ),
-            compatibility_score=harmonic['overall_score'],
-            tempo_match=abs(analysis_a['tempo'] - analysis_b['tempo']) < 5,
-            key_match=harmonic['key_compatibility']['compatible'],
-            beat_aligned=True
-        )
-        
-        return best_pair
+        try:
+            # Ensure stereo for soundfile
+            if y_a.ndim == 1:
+                y_a_stereo = np.column_stack([y_a, y_a])
+            else:
+                y_a_stereo = y_a
+            if y_b.ndim == 1:
+                y_b_stereo = np.column_stack([y_b, y_b])
+            else:
+                y_b_stereo = y_b
+            
+            sf.write(temp_a, y_a_stereo, self.sr)
+            sf.write(temp_b, y_b_stereo, self.sr)
+            
+            # Use intelligent transition finder with quality prediction
+            transition_pair = self.transition_finder.find_best_transition_pair_intelligent(
+                temp_a,
+                temp_b,
+                song_a_analysis=analysis_a,
+                song_b_analysis=analysis_b
+            )
+            
+            return transition_pair
+            
+        finally:
+            # Cleanup temporary files
+            try:
+                if os.path.exists(temp_a):
+                    os.remove(temp_a)
+                if os.path.exists(temp_b):
+                    os.remove(temp_b)
+                if os.path.exists(temp_dir):
+                    os.rmdir(temp_dir)
+            except:
+                pass  # Silently ignore cleanup errors
     
     def _get_section_at_time(self, time_sec: float, structure: Dict) -> str:
         """Get section type at a given time."""
@@ -955,3 +951,50 @@ class SmartMixer:
                         seg_b_eq[i:end_idx] = signal.filtfilt(b, a, chunk) * (0.85 + 0.15 * (1 - bass_cut_b_chunk))
         
         return seg_a_eq, seg_b_eq
+    
+    def _detect_vocal_start_time(self, vocal_stem: Optional[np.ndarray], total_samples: int) -> float:
+        """
+        Detect when vocals actually start in Song B.
+        
+        Args:
+            vocal_stem: Separated vocal stem from Song B (can be None)
+            total_samples: Total number of samples in transition segment
+        
+        Returns:
+            Ratio (0-1) indicating when vocals start (0.5 = 50% through transition)
+        """
+        if vocal_stem is None or len(vocal_stem) == 0:
+            return 0.5  # Default: 50% through transition
+        
+        # Convert to mono if stereo
+        if vocal_stem.ndim > 1:
+            vocal_stem = np.mean(vocal_stem, axis=1)
+        
+        # Use energy-based detection
+        frame_size = int(self.sr * 0.5)  # 0.5 second frames
+        n_frames = len(vocal_stem) // frame_size
+        if n_frames == 0:
+            return 0.5
+        
+        frame_energies = []
+        for i in range(n_frames):
+            start = i * frame_size
+            end = min(start + frame_size, len(vocal_stem))
+            energy = np.mean(vocal_stem[start:end] ** 2)
+            frame_energies.append(energy)
+        
+        if len(frame_energies) == 0:
+            return 0.5
+        
+        # Find first frame with significant vocal energy
+        max_energy = np.max(frame_energies)
+        threshold = max_energy * 0.3  # 30% of max energy
+        
+        for i, energy in enumerate(frame_energies):
+            if energy > threshold:
+                # Convert frame index to ratio
+                frame_ratio = (i * frame_size) / total_samples
+                return float(np.clip(frame_ratio, 0.0, 1.0))
+        
+        # If no significant energy found, assume vocals start halfway
+        return 0.5
