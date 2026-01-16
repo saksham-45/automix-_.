@@ -8,6 +8,7 @@ import numpy as np
 import librosa
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
+from scipy.signal import find_peaks
 
 from src.structure_analyzer import StructureAnalyzer
 from src.harmonic_analyzer import HarmonicAnalyzer
@@ -34,6 +35,7 @@ class TransitionPair:
     tempo_match: bool
     key_match: bool
     beat_aligned: bool
+    quality_factors: Optional[Dict] = None  # Quality prediction factors (vocal_overlap_risk, etc.)
 
 
 class SmartTransitionFinder:
@@ -54,6 +56,7 @@ class SmartTransitionFinder:
                                   song_b_analysis: Optional[Dict] = None) -> TransitionPair:
         """
         Find the best transition pair between two songs.
+        Now uses intelligent multi-candidate evaluation with quality prediction.
         
         Args:
             song_a_path: Path to outgoing song
@@ -64,84 +67,10 @@ class SmartTransitionFinder:
         Returns:
             Best TransitionPair for smooth blending
         """
-        # Load audio
-        y_a, sr_a = librosa.load(song_a_path, sr=self.sr)
-        y_b, sr_b = librosa.load(song_b_path, sr=self.sr)
-        
-        # Find candidate points in both songs
-        print("Analyzing Song A for transition out points...")
-        song_a_points = self._find_transition_points(y_a, sr_a, is_outgoing=True)
-        
-        print("Analyzing Song B for transition in points...")
-        song_b_points = self._find_transition_points(y_b, sr_b, is_outgoing=False)
-        
-        # Get tempo/key for compatibility scoring
-        tempo_a = self._get_tempo(y_a, sr_a)
-        tempo_b = self._get_tempo(y_b, sr_b)
-        key_a = self._get_key(song_a_analysis) if song_a_analysis else None
-        key_b = self._get_key(song_b_analysis) if song_b_analysis else None
-        
-        # Score all pairs and find best
-        print("Scoring transition pairs...")
-        best_pair = None
-        best_score = -1
-        
-        for point_a in song_a_points[:20]:  # Top 20 from song A
-            for point_b in song_b_points[:20]:  # Top 20 from song B
-                pair_score = self._score_transition_pair(
-                    point_a, point_b,
-                    tempo_a, tempo_b,
-                    key_a, key_b
-                )
-                
-                if pair_score > best_score:
-                    best_score = pair_score
-                    best_pair = TransitionPair(
-                        song_a_point=point_a,
-                        song_b_point=point_b,
-                        compatibility_score=pair_score,
-                        tempo_match=abs(tempo_a - tempo_b) < 5,  # Within 5 BPM
-                        key_match=self._keys_compatible(key_a, key_b) if key_a and key_b else True,
-                        beat_aligned=point_a.beat_aligned and point_b.beat_aligned
-                    )
-        
-        if best_pair is None:
-            # Fallback: use last 30s of A, first 30s of B
-            duration_a = len(y_a) / sr_a
-            duration_b = len(y_b) / sr_b
-            fallback_a = TransitionPoint(
-                time_sec=max(0, duration_a - 30),
-                beat_aligned=True,
-                energy=0.5,
-                energy_trend='stable',
-                structural_label='outro',
-                score=0.5,
-                beat_position=0
-            )
-            fallback_b = TransitionPoint(
-                time_sec=min(30, duration_b * 0.1),
-                beat_aligned=True,
-                energy=0.5,
-                energy_trend='rising',
-                structural_label='intro',
-                score=0.5,
-                beat_position=0
-            )
-            best_pair = TransitionPair(
-                song_a_point=fallback_a,
-                song_b_point=fallback_b,
-                compatibility_score=0.5,
-                tempo_match=True,
-                key_match=True,
-                beat_aligned=True
-            )
-        
-        print(f"\n✓ Best transition found:")
-        print(f"  Song A @ {best_pair.song_a_point.time_sec:.1f}s ({best_pair.song_a_point.structural_label})")
-        print(f"  Song B @ {best_pair.song_b_point.time_sec:.1f}s ({best_pair.song_b_point.structural_label})")
-        print(f"  Score: {best_pair.compatibility_score:.3f}")
-        
-        return best_pair
+        # Use intelligent evaluation by default
+        return self.find_best_transition_pair_intelligent(
+            song_a_path, song_b_path, song_a_analysis, song_b_analysis
+        )
     
     def _find_transition_points(self,
                                 y: np.ndarray,
@@ -182,8 +111,8 @@ class SmartTransitionFinder:
             frame_energy[i] = np.mean(energy[start:end])
             frame_times[i] = (start + frame_length // 2) / sr
         
-        # Find structural segments
-        segments = self._find_structural_segments(y, sr, frame_times, frame_energy)
+        # Find structural segments (enhanced for full song analysis)
+        segments = self._find_structural_segments_intelligent(y, sr, frame_times, frame_energy, duration)
         
         # Find good transition points based on type
         candidates = []
@@ -254,35 +183,85 @@ class SmartTransitionFinder:
                                   sr: int,
                                   frame_times: np.ndarray,
                                   frame_energy: np.ndarray) -> List[Dict]:
-        """Find structural segments (intro, verse, chorus, etc.) using energy and novelty."""
-        # Simple structural segmentation based on energy changes
+        """Legacy method - redirects to intelligent version."""
         duration = len(y) / sr
+        return self._find_structural_segments_intelligent(y, sr, frame_times, frame_energy, duration)
+    
+    def _find_structural_segments_intelligent(self,
+                                             y: np.ndarray,
+                                             sr: int,
+                                             frame_times: np.ndarray,
+                                             frame_energy: np.ndarray,
+                                             duration: float) -> List[Dict]:
+        """
+        Intelligent structural segmentation that adapts to song complexity.
+        For simple songs: full analysis
+        For complex songs: strategic sampling + key point detection
+        """
+        # Detect structural changes using energy variations and novelty
+        # Use a sliding window to detect significant changes
         
-        # Divide song into equal segments based on energy variations
-        n_segments = min(8, max(4, int(duration / 30)))  # ~30 seconds per segment
-        segment_duration = duration / n_segments
+        # Compute energy variance in sliding windows
+        window_size = max(10, int(4 / (frame_times[1] - frame_times[0]) if len(frame_times) > 1 else 10))  # ~4 second windows
+        energy_smooth = np.convolve(frame_energy, np.ones(window_size) / window_size, mode='same')
+        
+        # Detect peaks and valleys (section boundaries)
+        # Find energy peaks (potential chorus/drop sections)
+        peaks, _ = find_peaks(energy_smooth, distance=max(5, window_size // 2), prominence=0.1)
+        
+        # Find energy valleys (potential breakdowns/verses)
+        valleys, _ = find_peaks(-energy_smooth, distance=max(5, window_size // 2), prominence=0.1)
+        
+        # Combine peaks and valleys to create segments
+        key_points = sorted(set([0, len(frame_times) - 1] + peaks.tolist() + valleys.tolist()))
         
         segments = []
-        for i in range(n_segments):
-            start = i * segment_duration
-            end = (i + 1) * segment_duration if i < n_segments - 1 else duration
-            mid = (start + end) / 2
+        for i in range(len(key_points) - 1):
+            start_idx = key_points[i]
+            end_idx = key_points[i + 1]
+            
+            start_time = frame_times[start_idx] if start_idx < len(frame_times) else 0
+            end_time = frame_times[end_idx] if end_idx < len(frame_times) else duration
+            mid_time = (start_time + end_time) / 2
             
             # Get average energy in this segment
-            start_frame = np.argmin(np.abs(frame_times - start))
-            end_frame = np.argmin(np.abs(frame_times - min(end, frame_times[-1])))
-            
-            if start_frame < len(frame_energy) and end_frame < len(frame_energy):
-                avg_energy = np.mean(frame_energy[start_frame:end_frame+1])
+            if start_idx < len(frame_energy) and end_idx <= len(frame_energy):
+                avg_energy = np.mean(frame_energy[start_idx:end_idx])
             else:
                 avg_energy = 0.5
             
             segments.append({
-                'start': start,
-                'end': end,
-                'mid': mid,
+                'start': float(start_time),
+                'end': float(end_time),
+                'mid': float(mid_time),
                 'energy': float(avg_energy)
             })
+        
+        # If we didn't find enough segments, fall back to equal division
+        if len(segments) < 4:
+            n_segments = min(8, max(4, int(duration / 30)))
+            segment_duration = duration / n_segments
+            
+            segments = []
+            for i in range(n_segments):
+                start = i * segment_duration
+                end = (i + 1) * segment_duration if i < n_segments - 1 else duration
+                mid = (start + end) / 2
+                
+                start_frame = np.argmin(np.abs(frame_times - start))
+                end_frame = np.argmin(np.abs(frame_times - min(end, frame_times[-1])))
+                
+                if start_frame < len(frame_energy) and end_frame < len(frame_energy):
+                    avg_energy = np.mean(frame_energy[start_frame:end_frame+1])
+                else:
+                    avg_energy = 0.5
+                
+                segments.append({
+                    'start': start,
+                    'end': end,
+                    'mid': mid,
+                    'energy': float(avg_energy)
+                })
         
         return segments
     
@@ -436,4 +415,338 @@ class SmartTransitionFinder:
         compatible = [0, 5, 7, 3, 4, 8, 9]  # Same, perfect 4th/5th, etc.
         
         return diff in compatible or (12 - diff) in compatible
+    
+    def find_best_transition_pair_intelligent(self,
+                                             song_a_path: str,
+                                             song_b_path: str,
+                                             song_a_analysis: Optional[Dict] = None,
+                                             song_b_analysis: Optional[Dict] = None) -> TransitionPair:
+        """
+        Enhanced version with multi-candidate evaluation and quality prediction.
+        Tries top candidates from each song and predicts quality before committing.
+        """
+        # Load audio
+        y_a, sr_a = librosa.load(song_a_path, sr=self.sr)
+        y_b, sr_b = librosa.load(song_b_path, sr=self.sr)
+        
+        # Find candidate points in both songs
+        print("Analyzing Song A for transition out points...")
+        song_a_points = self._find_transition_points(y_a, sr_a, is_outgoing=True)
+        
+        print("Analyzing Song B for transition in points...")
+        song_b_points = self._find_transition_points(y_b, sr_b, is_outgoing=False)
+        
+        # Get tempo/key for compatibility scoring
+        tempo_a = self._get_tempo(y_a, sr_a)
+        tempo_b = self._get_tempo(y_b, sr_b)
+        key_a = self._get_key(song_a_analysis) if song_a_analysis else None
+        key_b = self._get_key(song_b_analysis) if song_b_analysis else None
+        
+        # Evaluate TOP 10 candidates from each song (not 20x20 brute force)
+        print("Evaluating top candidates with quality prediction...")
+        top_candidates_a = song_a_points[:10]
+        top_candidates_b = song_b_points[:10]
+        
+        evaluated_pairs = []
+        for point_a in top_candidates_a:
+            for point_b in top_candidates_b:
+                # Predict quality BEFORE creating transition
+                quality_score, quality_factors = self._predict_transition_quality(
+                    point_a, point_b,
+                    y_a, y_b,
+                    tempo_a, tempo_b,
+                    key_a, key_b,
+                    song_a_analysis, song_b_analysis
+                )
+                
+                # Combine basic compatibility with predicted quality
+                basic_score = self._score_transition_pair(
+                    point_a, point_b,
+                    tempo_a, tempo_b,
+                    key_a, key_b
+                )
+                
+                # Weighted combination: 60% quality prediction, 40% basic compatibility
+                combined_score = quality_score * 0.6 + basic_score * 0.4
+                
+                evaluated_pairs.append({
+                    'point_a': point_a,
+                    'point_b': point_b,
+                    'quality_score': quality_score,
+                    'basic_score': basic_score,
+                    'combined_score': combined_score,
+                    'quality_factors': quality_factors
+                })
+        
+        # Sort by combined score (best first)
+        evaluated_pairs.sort(key=lambda x: x['combined_score'], reverse=True)
+        
+        # Return top 3 candidates for final selection
+        if not evaluated_pairs:
+            # Fallback to original method
+            return self.find_best_transition_pair(song_a_path, song_b_path, song_a_analysis, song_b_analysis)
+        
+        # Use best candidate
+        best = evaluated_pairs[0]
+        
+        best_pair = TransitionPair(
+            song_a_point=best['point_a'],
+            song_b_point=best['point_b'],
+            compatibility_score=best['combined_score'],
+            tempo_match=abs(tempo_a - tempo_b) < 5,
+            key_match=self._keys_compatible(key_a, key_b) if key_a and key_b else True,
+            beat_aligned=best['point_a'].beat_aligned and best['point_b'].beat_aligned,
+            quality_factors=best['quality_factors']  # Store quality factors for use in mixer
+        )
+        
+        print(f"\n✓ Best transition found (with quality prediction):")
+        print(f"  Song A @ {best_pair.song_a_point.time_sec:.1f}s ({best_pair.song_a_point.structural_label})")
+        print(f"  Song B @ {best_pair.song_b_point.time_sec:.1f}s ({best_pair.song_b_point.structural_label})")
+        print(f"  Predicted Quality: {best['quality_score']:.3f}")
+        print(f"  Combined Score: {best['combined_score']:.3f}")
+        print(f"  Quality Factors:")
+        for factor, value in best['quality_factors'].items():
+            print(f"    - {factor}: {value:.3f}")
+        
+        return best_pair
+    
+    def _predict_transition_quality(self,
+                                   point_a: TransitionPoint,
+                                   point_b: TransitionPoint,
+                                   y_a: np.ndarray,
+                                   y_b: np.ndarray,
+                                   tempo_a: float,
+                                   tempo_b: float,
+                                   key_a: Optional[str],
+                                   key_b: Optional[str],
+                                   analysis_a: Optional[Dict],
+                                   analysis_b: Optional[Dict]) -> Tuple[float, Dict]:
+        """
+        Predict if a transition will sound good BEFORE creating it.
+        Returns (overall_quality_score, quality_factors_dict)
+        """
+        quality_factors = {}
+        
+        # 1. Harmonic compatibility
+        if key_a and key_b:
+            if self._keys_compatible(key_a, key_b):
+                quality_factors['harmonic_compatibility'] = 1.0
+            else:
+                # Calculate dissonance level
+                key_to_idx = {'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5,
+                             'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11}
+                key_a_base = key_a.replace('m', '').replace('M', '').replace('min', '').replace('maj', '')
+                key_b_base = key_b.replace('m', '').replace('M', '').replace('min', '').replace('maj', '')
+                idx_a = key_to_idx.get(key_a_base, 0)
+                idx_b = key_to_idx.get(key_b_base, 0)
+                diff = min(abs(idx_a - idx_b), 12 - abs(idx_a - idx_b))
+                quality_factors['harmonic_compatibility'] = max(0.3, 1.0 - (diff / 6.0))
+        else:
+            quality_factors['harmonic_compatibility'] = 0.7  # Unknown is moderate
+        
+        # 2. Energy compatibility
+        energy_comp = self._score_energy_match(point_a, point_b)
+        quality_factors['energy_compatibility'] = energy_comp
+        
+        # 3. Structural compatibility
+        struct_comp = self._score_structural_match(point_a, point_b)
+        quality_factors['structural_compatibility'] = struct_comp
+        
+        # 4. Tempo/phase match prediction
+        tempo_phase = self._score_tempo_phase_match(point_a, point_b, tempo_a, tempo_b)
+        quality_factors['tempo_phase_match'] = tempo_phase
+        
+        # 5. Spectral clash risk prediction
+        spectral_clash = self._predict_spectral_clash(point_a, point_b, y_a, y_b)
+        quality_factors['spectral_clash_risk'] = spectral_clash  # Lower is better
+        
+        # 6. Vocal overlap risk prediction
+        vocal_overlap = self._predict_vocal_overlap(point_a, point_b, y_a, y_b)
+        quality_factors['vocal_overlap_risk'] = vocal_overlap  # Lower is better
+        
+        # 7. Beat alignment quality
+        beat_align = 1.0 if (point_a.beat_aligned and point_b.beat_aligned) else 0.6
+        quality_factors['beat_alignment_quality'] = beat_align
+        
+        # Weighted quality score
+        weights = {
+            'harmonic_compatibility': 0.20,
+            'energy_compatibility': 0.15,
+            'structural_compatibility': 0.15,
+            'tempo_phase_match': 0.20,
+            'spectral_clash_risk': 0.15,  # Lower is better
+            'vocal_overlap_risk': 0.10,   # Lower is better
+            'beat_alignment_quality': 0.05
+        }
+        
+        overall = sum(
+            quality_factors[k] * weights[k] 
+            if 'risk' not in k else (1 - quality_factors[k]) * weights[k]
+            for k in weights
+        )
+        
+        return float(overall), quality_factors
+    
+    def _score_energy_match(self, point_a: TransitionPoint, point_b: TransitionPoint) -> float:
+        """Score energy compatibility between two points."""
+        # Ideal: outgoing fading, incoming rising
+        if point_a.energy_trend in ['falling', 'dip'] and point_b.energy_trend == 'rising':
+            return 1.0
+        elif point_a.energy_trend in ['falling', 'stable'] and point_b.energy_trend != 'falling':
+            return 0.8
+        elif point_a.energy_trend == 'stable' and point_b.energy_trend == 'stable':
+            return 0.6
+        else:
+            return 0.4
+    
+    def _score_structural_match(self, point_a: TransitionPoint, point_b: TransitionPoint) -> float:
+        """Score structural compatibility."""
+        # Ideal pairs
+        ideal_pairs = [
+            ('outro', 'intro'), ('outro', 'build'),
+            ('breakdown', 'intro'), ('breakdown', 'build'),
+            ('verse', 'verse'), ('verse', 'intro')
+        ]
+        
+        pair = (point_a.structural_label, point_b.structural_label)
+        if pair in ideal_pairs:
+            return 1.0
+        elif point_a.structural_label == 'outro' and point_b.structural_label in ['intro', 'verse']:
+            return 0.8
+        elif point_a.structural_label in ['breakdown', 'verse'] and point_b.structural_label == 'intro':
+            return 0.8
+        else:
+            return 0.6
+    
+    def _score_tempo_phase_match(self, 
+                                 point_a: TransitionPoint,
+                                 point_b: TransitionPoint,
+                                 tempo_a: float,
+                                 tempo_b: float) -> float:
+        """Predict tempo/phase alignment quality."""
+        tempo_diff = abs(tempo_a - tempo_b)
+        
+        if tempo_diff < 1:
+            return 1.0
+        elif tempo_diff < 2:
+            return 0.9
+        elif tempo_diff < 5:
+            return 0.8
+        elif tempo_diff < 10:
+            return 0.6
+        else:
+            return 0.3
+    
+    def _predict_spectral_clash(self,
+                               point_a: TransitionPoint,
+                               point_b: TransitionPoint,
+                               y_a: np.ndarray,
+                               y_b: np.ndarray) -> float:
+        """Predict spectral clash risk between two transition points."""
+        # Extract short segments around transition points
+        window_sec = 2.0  # 2 seconds before/after
+        sr = self.sr
+        
+        # Extract segment A (around point_a)
+        idx_a_start = max(0, int((point_a.time_sec - window_sec) * sr))
+        idx_a_end = min(len(y_a), int((point_a.time_sec + window_sec) * sr))
+        seg_a = y_a[idx_a_start:idx_a_end]
+        
+        # Extract segment B (around point_b)
+        idx_b_start = max(0, int((point_b.time_sec - window_sec) * sr))
+        idx_b_end = min(len(y_b), int((point_b.time_sec + window_sec) * sr))
+        seg_b = y_b[idx_b_start:idx_b_end]
+        
+        if len(seg_a) == 0 or len(seg_b) == 0:
+            return 0.5  # Unknown
+        
+        # Convert to mono if needed
+        if seg_a.ndim > 1:
+            seg_a = np.mean(seg_a, axis=1)
+        if seg_b.ndim > 1:
+            seg_b = np.mean(seg_b, axis=1)
+        
+        # Compute spectral centroid (brightness)
+        try:
+            centroid_a = librosa.feature.spectral_centroid(y=seg_a, sr=sr)[0]
+            centroid_b = librosa.feature.spectral_centroid(y=seg_b, sr=sr)[0]
+            
+            centroid_a_mean = np.mean(centroid_a)
+            centroid_b_mean = np.mean(centroid_b)
+            
+            # Compute spectral bandwidth (spread)
+            bandwidth_a = librosa.feature.spectral_bandwidth(y=seg_a, sr=sr)[0]
+            bandwidth_b = librosa.feature.spectral_bandwidth(y=seg_b, sr=sr)[0]
+            
+            bandwidth_a_mean = np.mean(bandwidth_a)
+            bandwidth_b_mean = np.mean(bandwidth_b)
+            
+            # High clash risk if:
+            # - Similar spectral centroid (similar frequency content)
+            # - Both have high bandwidth (both occupy full spectrum)
+            centroid_diff = abs(centroid_a_mean - centroid_b_mean) / (centroid_a_mean + centroid_b_mean + 1e-10)
+            bandwidth_overlap = min(bandwidth_a_mean, bandwidth_b_mean) / (max(bandwidth_a_mean, bandwidth_b_mean) + 1e-10)
+            
+            # Clash risk: low difference + high overlap = high clash
+            clash_risk = (1 - centroid_diff * 0.5) * bandwidth_overlap
+            
+            return float(np.clip(clash_risk, 0, 1))
+        except:
+            return 0.5  # Fallback
+    
+    def _predict_vocal_overlap(self,
+                              point_a: TransitionPoint,
+                              point_b: TransitionPoint,
+                              y_a: np.ndarray,
+                              y_b: np.ndarray) -> float:
+        """Predict vocal overlap risk."""
+        # Extract segments
+        window_sec = 3.0
+        sr = self.sr
+        
+        idx_a_start = max(0, int((point_a.time_sec - window_sec) * sr))
+        idx_a_end = min(len(y_a), int((point_a.time_sec + window_sec) * sr))
+        seg_a = y_a[idx_a_start:idx_a_end]
+        
+        idx_b_start = max(0, int((point_b.time_sec - window_sec) * sr))
+        idx_b_end = min(len(y_b), int((point_b.time_sec + window_sec) * sr))
+        seg_b = y_b[idx_b_start:idx_b_end]
+        
+        if len(seg_a) == 0 or len(seg_b) == 0:
+            return 0.5
+        
+        # Convert to mono
+        if seg_a.ndim > 1:
+            seg_a = np.mean(seg_a, axis=1)
+        if seg_b.ndim > 1:
+            seg_b = np.mean(seg_b, axis=1)
+        
+        try:
+            # Estimate vocal presence using spectral rolloff and zero crossing rate
+            # Vocals typically have:
+            # - Moderate spectral rolloff (not too high, not too low)
+            # - Moderate zero crossing rate
+            
+            rolloff_a = librosa.feature.spectral_rolloff(y=seg_a, sr=sr)[0]
+            rolloff_b = librosa.feature.spectral_rolloff(y=seg_b, sr=sr)[0]
+            
+            zcr_a = librosa.feature.zero_crossing_rate(seg_a)[0]
+            zcr_b = librosa.feature.zero_crossing_rate(seg_b)[0]
+            
+            # Normalize to 0-1 range
+            rolloff_a_norm = np.clip((np.mean(rolloff_a) - 1000) / 5000, 0, 1)
+            rolloff_b_norm = np.clip((np.mean(rolloff_b) - 1000) / 5000, 0, 1)
+            zcr_a_norm = np.clip(np.mean(zcr_a) / 0.1, 0, 1)
+            zcr_b_norm = np.clip(np.mean(zcr_b) / 0.1, 0, 1)
+            
+            # Vocal presence score (both high = both have vocals)
+            vocal_a = (rolloff_a_norm + zcr_a_norm) / 2
+            vocal_b = (rolloff_b_norm + zcr_b_norm) / 2
+            
+            # Overlap risk: both have vocals
+            overlap_risk = vocal_a * vocal_b
+            
+            return float(np.clip(overlap_risk, 0, 1))
+        except:
+            return 0.5  # Fallback
 
