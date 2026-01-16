@@ -977,10 +977,6 @@ def _execute_new_technique(self, seg_a, seg_b, params, ...):
 
 4. Add to method_map in `execute()` method
 
-## License
-
-MIT License - See LICENSE file for details
-
 ## Acknowledgments
 
 - **Demucs** for state-of-the-art stem separation
