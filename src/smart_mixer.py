@@ -23,6 +23,7 @@ from src.transition_strategist import TransitionStrategist
 from src.crossfade_engine import CrossfadeEngine
 from src.quality_assessor import QualityAssessor
 from src.stem_separator import StemSeparator
+from src.technique_executor import TechniqueExecutor
 
 # Debug logging helper
 DEBUG_LOG_PATH = '/Users/saksham/untitled folder 7/.cursor/debug.log'
@@ -88,6 +89,7 @@ class SmartMixer:
         self.transition_strategist = TransitionStrategist()
         self.crossfade_engine = CrossfadeEngine(sr=sr)
         self.quality_assessor = QualityAssessor(sr=sr)
+        self.technique_executor = TechniqueExecutor(sr=sr)
         
         # Load stem separation config
         try:
@@ -281,6 +283,12 @@ class SmartMixer:
             clash_score
         )
         
+        # Get technique-specific parameters
+        technique_params = self.transition_strategist.get_technique_parameters(
+            technique['technique_name'],
+            {'duration_sec': transition_duration or technique['duration_sec']}
+        )
+        
         # Determine transition duration
         if transition_duration is None:
             transition_duration = technique['duration_sec']
@@ -308,6 +316,10 @@ class SmartMixer:
         with open(log_path, 'a') as f:
             f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"smart_mixer.py:230","message":"Segments extracted","data":{"seg_a_len":len(seg_a),"seg_b_len":len(seg_b),"seg_a_shape":str(seg_a.shape),"seg_b_shape":str(seg_b.shape),"seg_a_rms":seg_a_rms,"seg_b_rms":seg_b_rms,"seg_a_max":seg_a_max,"seg_b_max":seg_b_max,"seg_a_zeros":seg_a_zeros,"seg_b_zeros":seg_b_zeros},"timestamp":int(time.time()*1000)}) + '\n')
         #endregion
+        
+        # Initialize stems variables (for techniques that need them)
+        seg_a_stems = None
+        seg_b_stems = None
         
         # Stem separation for smooth transitions (prevent drums/bass from carrying over)
         if self.stem_separation_enabled and self.stem_separator is not None:
@@ -417,6 +429,8 @@ class SmartMixer:
                 print(f"  ⚠ Stem separation failed: {e}")
                 print("  → Continuing with original audio")
                 # Continue with original seg_a if separation fails
+                seg_a_stems = None
+                seg_b_stems = None
         
         # Apply dynamic EQ if needed
         if clash_score > 0.3:
@@ -438,91 +452,50 @@ class SmartMixer:
             if 'bass_swap' in eq_analysis['recommendations']:
                 seg_a, seg_b = self._apply_bass_swap(seg_a, seg_b, transition_duration)
         
-        # Create smooth, gradual crossfade curves
-        print("[7/8] Creating smooth crossfade curves...")
+        # Execute selected technique using TechniqueExecutor
+        print(f"[7/8] Executing {technique['technique_name']} technique...")
         
-        # Use simple, smooth equal-power crossfade with extra smoothing
-        vol_a, vol_b = self.crossfade_engine.create_gradual_crossfade(
-            len(seg_a), overlap_ratio=0.75
+        # Check if technique needs stems but we don't have them
+        stem_required_techniques = ['staggered_stem_mix', 'partial_stem_separation', 'vocal_layering']
+        if technique['technique_name'] in stem_required_techniques and (seg_a_stems is None or seg_b_stems is None):
+            # Try to separate stems if needed
+            if self.stem_separation_enabled and self.stem_separator is not None:
+                try:
+                    print(f"  Separating stems for {technique['technique_name']} technique...")
+                    seg_a_stems = self.stem_separator.separate_segment(seg_a, self.sr)
+                    seg_b_stems = self.stem_separator.separate_segment(seg_b, self.sr)
+                except Exception as e:
+                    print(f"  ⚠ Stem separation failed for technique: {e}")
+                    print(f"  → Falling back to long_blend")
+                    technique['technique_name'] = 'long_blend'
+                    technique_params = self.transition_strategist.get_technique_parameters('long_blend', {'duration_sec': transition_duration})
+        
+        #region agent log
+        exec_start = time.time()
+        with open(log_path, 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"TECHNIQUE","location":"smart_mixer.py:442","message":"Starting technique execution","data":{"technique":technique['technique_name'],"needs_stems":technique['technique_name'] in stem_required_techniques,"has_stems":seg_a_stems is not None and seg_b_stems is not None},"timestamp":int(time.time()*1000)}) + '
+')
+        #endregion
+        
+        # Execute technique
+        mixed = self.technique_executor.execute(
+            technique['technique_name'],
+            seg_a,
+            seg_b,
+            technique_params,
+            seg_a_stems=seg_a_stems,
+            seg_b_stems=seg_b_stems
         )
         
         #region agent log
-        vol_a_sample_start = vol_a[:min(100, len(vol_a))].tolist() if len(vol_a) > 0 else []
-        vol_a_sample_end = vol_a[-min(100, len(vol_a)):].tolist() if len(vol_a) > 0 else []
-        vol_b_sample_start = vol_b[:min(100, len(vol_b))].tolist() if len(vol_b) > 0 else []
-        vol_b_sample_end = vol_b[-min(100, len(vol_b)):].tolist() if len(vol_b) > 0 else []
-        debug_log("Volume curves created", {
-            "vol_a_len": len(vol_a), "vol_b_len": len(vol_b),
-            "vol_a_min": float(np.min(vol_a)), "vol_a_max": float(np.max(vol_a)),
-            "vol_b_min": float(np.min(vol_b)), "vol_b_max": float(np.max(vol_b)),
-            "vol_a_start_sample": vol_a_sample_start[:10], "vol_a_end_sample": vol_a_sample_end[-10:],
-            "vol_b_start_sample": vol_b_sample_start[:10], "vol_b_end_sample": vol_b_sample_end[-10:]
-        }, "B", "smart_mixer.py:277")
-        #endregion
-        
-        # Simple bass management: apply gentle high-pass to outgoing track as it fades
-        # This prevents bass conflicts without complex processing
-        from scipy import signal
-        sr = self.sr
-        n_samples = len(seg_a)
-        
-        # Create time-varying bass reduction for outgoing track
-        t = np.linspace(0, 1, n_samples)
-        # Gradually reduce bass in outgoing track (prevent low-end conflict)
-        bass_reduction = t ** 2  # Starts at 0, ends at 1
-        
-        # Apply gentle high-pass filter that increases over time
-        seg_a_final = seg_a.copy()
-        if seg_a_final.ndim == 2:
-            for ch in range(seg_a_final.shape[1]):
-                # Process in chunks for efficiency
-                chunk_size = int(2.0 * sr)  # 2 second chunks
-                for i in range(0, n_samples, chunk_size):
-                    end_idx = min(i + chunk_size, n_samples)
-                    chunk = seg_a_final[i:end_idx, ch]
-                    
-                    # Apply bass reduction based on fade progress
-                    avg_reduction = np.mean(bass_reduction[i:end_idx])
-                    if avg_reduction > 0.3:  # Only filter if significant reduction needed
-                        nyq = sr / 2
-                        cutoff = (200 + 100 * avg_reduction) / nyq  # 200Hz -> 300Hz
-                        b, a = signal.butter(2, cutoff, btype='high')
-                        seg_a_final[i:end_idx, ch] = signal.filtfilt(b, a, chunk)
-        else:
-            # Mono handling
-            chunk_size = int(2.0 * sr)
-            for i in range(0, n_samples, chunk_size):
-                end_idx = min(i + chunk_size, n_samples)
-                chunk = seg_a_final[i:end_idx]
-                avg_reduction = np.mean(bass_reduction[i:end_idx])
-                if avg_reduction > 0.3:
-                    nyq = sr / 2
-                    cutoff = (200 + 100 * avg_reduction) / nyq
-                    b, a = signal.butter(2, cutoff, btype='high')
-                    seg_a_final[i:end_idx] = signal.filtfilt(b, a, chunk)
-        
-        seg_b_final = seg_b  # Incoming track doesn't need filtering (bass will naturally fade in)
-        
-        # Mix
-        print("[8/8] Mixing with smooth crossfade...")
-        
-        #region agent log
-        mix_start = time.time()
+        exec_time = time.time() - exec_start
+        mixed_rms = float(np.sqrt(np.mean(mixed**2))) if len(mixed) > 0 else 0
         with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"F","location":"smart_mixer.py:268","message":"Before crossfade","data":{"vol_a_len":len(vol_a),"vol_b_len":len(vol_b),"seg_a_rms":float(np.sqrt(np.mean(seg_a_final**2))),"seg_b_rms":float(np.sqrt(np.mean(seg_b_final**2)))},"timestamp":int(time.time()*1000)}) + '\n')
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"TECHNIQUE","location":"smart_mixer.py:465","message":"Technique execution complete","data":{"technique":technique['technique_name'],"time_sec":exec_time,"mixed_len":len(mixed),"mixed_rms":mixed_rms},"timestamp":int(time.time()*1000)}) + '
+')
         #endregion
         
-        #region agent log
-        # Log BEFORE crossfade to test hypothesis D
-        seg_a_final_rms = float(np.sqrt(np.mean(seg_a_final**2)))
-        seg_b_final_rms = float(np.sqrt(np.mean(seg_b_final**2)))
-        seg_a_final_max = float(np.max(np.abs(seg_a_final)))
-        seg_b_final_max = float(np.max(np.abs(seg_b_final)))
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"smart_mixer.py:330","message":"Before apply_crossfade","data":{"seg_a_final_rms":seg_a_final_rms,"seg_b_final_rms":seg_b_final_rms,"seg_a_final_max":seg_a_final_max,"seg_b_final_max":seg_b_final_max,"vol_a_len":len(vol_a),"vol_b_len":len(vol_b)},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
-        
-        mixed = self.crossfade_engine.apply_crossfade(seg_a_final, seg_b_final, vol_a, vol_b)
+        print(f"[8/8] Mixing with {technique['technique_name']}...")
         
         #region agent log
         mix_time = time.time() - mix_start
