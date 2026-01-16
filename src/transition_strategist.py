@@ -78,6 +78,30 @@ class TransitionStrategist:
             energy_direction='down',
             harmonic_requirements='compatible',
             structure_preference=['chorus', 'breakdown']
+        ),
+        'staggered_stem_mix': TransitionTechnique(
+            name='staggered_stem_mix',
+            duration_bars=16,
+            description='Staggered stem mixing: beat first, vocals later',
+            energy_direction='maintain',
+            harmonic_requirements='any',
+            structure_preference=['verse', 'chorus', 'breakdown']
+        ),
+        'partial_stem_separation': TransitionTechnique(
+            name='partial_stem_separation',
+            duration_bars=24,
+            description='Partial stem separation: different stems at different times',
+            energy_direction='maintain',
+            harmonic_requirements='any',
+            structure_preference=['verse', 'chorus', 'breakdown']
+        ),
+        'vocal_layering': TransitionTechnique(
+            name='vocal_layering',
+            duration_bars=20,
+            description='Keep Song A vocals with Song B beat, transition vocals later',
+            energy_direction='maintain',
+            harmonic_requirements='compatible',
+            structure_preference=['verse', 'chorus']
         )
     }
     
@@ -94,7 +118,8 @@ class TransitionStrategist:
                         section_b: str,
                         energy_a: float,
                         energy_b: float,
-                        clash_score: float) -> Dict:
+                        clash_score: float,
+                        vocal_overlap_risk: float = 0.5) -> Dict:
         """
         Select optimal transition technique based on context.
         
@@ -143,6 +168,21 @@ class TransitionStrategist:
                 score += 0.3
             elif clash_score < 0.3 and tech_name == 'long_blend':
                 score += 0.2
+            
+            # Vocal overlap considerations
+            if vocal_overlap_risk > 0.6:
+                # High vocal overlap risk → prefer techniques that handle vocals better
+                if tech_name == 'staggered_stem_mix':
+                    score += 0.4  # Staggered mixing handles vocal overlap well
+                elif tech_name == 'vocal_layering':
+                    score += 0.3  # Vocal layering explicitly handles vocals
+                elif tech_name == 'partial_stem_separation':
+                    score += 0.2  # Partial separation can isolate vocals
+            
+            # Both songs have vocals and are harmonically compatible
+            if keys_compatible and vocal_overlap_risk > 0.4 and vocal_overlap_risk < 0.8:
+                if tech_name == 'vocal_layering':
+                    score += 0.3  # Good candidate for vocal layering
             
             technique_scores[tech_name] = score
         
