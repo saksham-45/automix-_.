@@ -109,21 +109,25 @@ output_file = f'{base_name}_{timestamp}.wav'
 print(f"\nSaving mix to: {output_file}")
 sf.write(output_file, mixed_audio, mixer.sr)
 
-# Delete old mix files AFTER saving new one (keep only the newest 3)
+# Move old mix files to data/old_mixes/ (keep only the newest one in working directory)
 try:
     cwd = os.path.dirname(os.path.abspath(__file__)) or '.'
+    old_mixes_dir = os.path.join(cwd, 'data', 'old_mixes')
+    os.makedirs(old_mixes_dir, exist_ok=True)  # Ensure directory exists
+    
     mix_files = sorted([f for f in os.listdir(cwd) if f.startswith(base_name) and f.endswith('.wav')], 
                        key=lambda x: os.path.getmtime(os.path.join(cwd, x)), reverse=True)
-    deleted_count = 0
-    for old_file in mix_files[3:]:  # Keep newest 3, delete rest
+    moved_count = 0
+    for old_file in mix_files[1:]:  # Keep newest 1 in cwd, move rest
         try:
             old_path = os.path.join(cwd, old_file)
-            os.remove(old_path)
-            deleted_count += 1
+            new_path = os.path.join(old_mixes_dir, old_file)
+            os.rename(old_path, new_path)
+            moved_count += 1
         except Exception as e:
             pass
-    if deleted_count > 0:
-        print(f"🗑️  Deleted {deleted_count} old mix file(s)")
+    if moved_count > 0:
+        print(f"📦 Moved {moved_count} old mix file(s) to data/old_mixes/")
 except Exception as e:
     pass
 
