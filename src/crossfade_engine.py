@@ -140,6 +140,118 @@ class CrossfadeEngine:
         
         return np.clip(full_curve, 0.01, 1.0)
     
+    def create_aggressive_vocal_fade(self, 
+                                    n_samples: int, 
+                                    vocal_start_time_ratio: float = 0.5,
+                                    aggressive_drop_ratio: float = 0.9) -> np.ndarray:
+        """
+        Create aggressive vocal fade that:
+        - Gradually fades from start until Song B vocals begin
+        - Sudden drop at the very end (last 10%)
+        
+        Args:
+            n_samples: Total number of samples
+            vocal_start_time_ratio: When Song B vocals start (0.5 = 50% through transition)
+            aggressive_drop_ratio: When to start sudden drop (0.9 = last 10%)
+        
+        Returns:
+            Fade curve array (starts at 1.0, fades gradually, then drops suddenly)
+        """
+        vocal_start_idx = int(n_samples * vocal_start_time_ratio)
+        drop_start_idx = int(n_samples * aggressive_drop_ratio)
+        
+        fade_curve = np.ones(n_samples)
+        
+        # Phase 1: Gradual fade until Song B vocals start
+        if vocal_start_idx > 0:
+            # Gradual exponential fade from 1.0 to 0.3
+            t = np.linspace(0, 1, vocal_start_idx)
+            gradual_fade = 0.3 + (0.7 * np.exp(-3 * t))  # Exponential decay
+            fade_curve[:vocal_start_idx] = gradual_fade
+        
+        # Phase 2: Hold at reduced level (if there's space)
+        if drop_start_idx > vocal_start_idx:
+            fade_curve[vocal_start_idx:drop_start_idx] = 0.3
+        
+        # Phase 3: Sudden aggressive drop at very end
+        if drop_start_idx < n_samples:
+            drop_samples = n_samples - drop_start_idx
+            t = np.linspace(0, 1, drop_samples)
+            # Aggressive exponential drop (cubed for extra aggression)
+            sudden_drop = 0.3 * (1 - t) ** 3
+            fade_curve[drop_start_idx:] = sudden_drop
+        
+        # Smooth transitions between phases
+        from scipy.ndimage import gaussian_filter1d
+        fade_curve = gaussian_filter1d(fade_curve, sigma=max(10, n_samples / 200))
+        
+        return np.clip(fade_curve, 0.0, 1.0)
+    
+    def create_multi_stage_curve(self, 
+                                 n_samples: int,
+                                 stages: List[Dict]) -> np.ndarray:
+        """
+        Create multi-stage fade curve with different behaviors per stage.
+        
+        Args:
+            n_samples: Total samples
+            stages: List of stage dicts with:
+                - 'start': start ratio (0-1)
+                - 'end': end ratio (0-1)
+                - 'fade_type': 'hold', 'linear', 'exponential', 'smooth', 'aggressive'
+                - 'value': value for 'hold' type
+                - 'end_value': target value for fade types
+        
+        Returns:
+            Fade curve array
+        """
+        curve = np.zeros(n_samples)
+        
+        for stage in stages:
+            start_idx = int(n_samples * stage['start'])
+            end_idx = int(n_samples * stage['end'])
+            stage_samples = end_idx - start_idx
+            
+            if stage_samples <= 0:
+                continue
+            
+            fade_type = stage.get('fade_type', 'linear')
+            
+            if fade_type == 'hold':
+                value = stage.get('value', 1.0)
+                curve[start_idx:end_idx] = value
+            
+            elif fade_type == 'linear':
+                end_value = stage.get('end_value', 0.0)
+                start_value = curve[start_idx - 1] if start_idx > 0 else 1.0
+                curve[start_idx:end_idx] = np.linspace(start_value, end_value, stage_samples)
+            
+            elif fade_type == 'exponential':
+                end_value = stage.get('end_value', 0.0)
+                start_value = curve[start_idx - 1] if start_idx > 0 else 1.0
+                t = np.linspace(0, 1, stage_samples)
+                curve[start_idx:end_idx] = start_value * np.exp(-3 * t) + end_value * (1 - np.exp(-3 * t))
+            
+            elif fade_type == 'smooth':
+                end_value = stage.get('end_value', 1.0)
+                start_value = curve[start_idx - 1] if start_idx > 0 else 0.0
+                t = np.linspace(0, 1, stage_samples)
+                # Smooth cosine curve
+                curve[start_idx:end_idx] = start_value + (end_value - start_value) * 0.5 * (1 - np.cos(np.pi * t))
+            
+            elif fade_type == 'aggressive':
+                end_value = stage.get('end_value', 0.0)
+                start_value = curve[start_idx - 1] if start_idx > 0 else 1.0
+                t = np.linspace(0, 1, stage_samples)
+                # Aggressive cubic drop
+                curve[start_idx:end_idx] = start_value * (1 - t) ** 3 + end_value * (1 - (1 - t) ** 3)
+        
+        # Smooth the entire curve
+        from scipy.ndimage import gaussian_filter1d
+        curve = gaussian_filter1d(curve, sigma=max(5, n_samples / 300))
+        
+        return np.clip(curve, 0.0, 1.0)
+    
     def create_lufs_matched_curves(self,
                                   y_a: np.ndarray,
                                   y_b: np.ndarray,
