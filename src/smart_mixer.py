@@ -499,16 +499,48 @@ class SmartMixer:
         #region agent log
         quality_start = time.time()
         with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"QUALITY","location":"smart_mixer.py:496","message":"Starting quality validation","data":{"technique":technique["technique_name"],"mixed_len":len(mixed)},"timestamp":int(time.time()*1000)}) + '\n')
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"QUALITY","location":"smart_mixer.py:496","message":"Starting quality validation","data":{"technique":technique["technique_name"],"mixed_len":len(mixed),"mixed_shape":str(mixed.shape) if hasattr(mixed, 'shape') else 'unknown',"seg_a_len":len(seg_a) if seg_a is not None else 0,"seg_b_len":len(seg_b) if seg_b is not None else 0},"timestamp":int(time.time()*1000)}) + '\n')
         #endregion
         
-        quality_assessment = self.quality_assessor.assess_transition_quality(
-            mixed,
-            y_a=seg_a,
-            y_b=seg_b,
-            key_a=analysis_a.get('key'),
-            key_b=analysis_b.get('key')
-        )
+        try:
+            #region agent log
+            with open(log_path, 'a') as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"QUALITY","location":"smart_mixer.py:506","message":"Calling assess_transition_quality","data":{"key_a":analysis_a.get('key'),"key_b":analysis_b.get('key')},"timestamp":int(time.time()*1000)}) + '\n')
+            #endregion
+            
+            # Convert to mono if stereo for quality assessment
+            mixed_mono = mixed
+            if mixed.ndim > 1:
+                mixed_mono = np.mean(mixed, axis=1)
+            seg_a_mono = seg_a
+            if seg_a is not None and seg_a.ndim > 1:
+                seg_a_mono = np.mean(seg_a, axis=1)
+            seg_b_mono = seg_b
+            if seg_b is not None and seg_b.ndim > 1:
+                seg_b_mono = np.mean(seg_b, axis=1)
+            
+            quality_assessment = self.quality_assessor.assess_transition_quality(
+                mixed_mono,
+                y_a=seg_a_mono,
+                y_b=seg_b_mono,
+                key_a=analysis_a.get('key'),
+                key_b=analysis_b.get('key')
+            )
+        except Exception as e:
+            #region agent log
+            with open(log_path, 'a') as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"QUALITY","location":"smart_mixer.py:525","message":"Quality assessment failed","data":{"error":str(e),"error_type":type(e).__name__},"timestamp":int(time.time()*1000)}) + '\n')
+            #endregion
+            print(f"  ⚠ Quality assessment failed: {e}")
+            quality_assessment = {
+                'overall_score': 0.5,
+                'smoothness': {'score': 0.5, 'analysis': 'unknown'},
+                'clarity': {'score': 0.5, 'analysis': 'unknown'},
+                'harmonic_tension': 0.5,
+                'frequency_balance': {'score': 0.5, 'analysis': 'unknown'},
+                'energy_continuity': {'score': 0.5, 'analysis': 'unknown'},
+                'quality_rating': 'unknown'
+            }
         
         #region agent log
         quality_time = time.time() - quality_start
@@ -529,6 +561,10 @@ class SmartMixer:
         
         print("\n✓ Mix complete")
         
+        # Build final mix with context
+        # FIXED: Extract context correctly - ensure NO overlap with mixed segment
+        context_before = int(10 * self.sr)
+        context_after = int(10 * self.sr)
         
         # Context A: 10 seconds BEFORE the START of seg_a (not before transition point)
         # seg_a starts at: aligned_a - transition_duration
