@@ -51,7 +51,15 @@ class TechniqueExecutor:
             'drop_mix': self._execute_drop_mix,
             'staggered_stem_mix': self._execute_staggered_stem_mix,
             'partial_stem_separation': self._execute_partial_stem_separation,
-            'vocal_layering': self._execute_vocal_layering
+            'vocal_layering': self._execute_vocal_layering,
+            'phrase_match': self._execute_phrase_match,
+            'backspin': self._execute_backspin,
+            'double_drop': self._execute_double_drop,
+            'acapella_overlay': self._execute_acapella_overlay,
+            'modulation': self._execute_modulation,
+            'energy_build': self._execute_energy_build,
+            'loop_transition': self._execute_loop_transition,
+            'breakdown_to_build': self._execute_breakdown_to_build
         }
         
         if technique_name in method_map:

@@ -102,6 +102,70 @@ class TransitionStrategist:
             energy_direction='maintain',
             harmonic_requirements='compatible',
             structure_preference=['verse', 'chorus']
+        ),
+        'phrase_match': TransitionTechnique(
+            name='phrase_match',
+            duration_bars=24,
+            description='Align transition to 8/16/32-bar phrase boundaries',
+            energy_direction='maintain',
+            harmonic_requirements='compatible',
+            structure_preference=['verse', 'chorus', 'breakdown']
+        ),
+        'backspin': TransitionTechnique(
+            name='backspin',
+            duration_bars=8,
+            description='Spin out outgoing track (reverse/tape stop effect)',
+            energy_direction='down',
+            harmonic_requirements='any',
+            structure_preference=['outro', 'chorus', 'drop']
+        ),
+        'double_drop': TransitionTechnique(
+            name='double_drop',
+            duration_bars=12,
+            description='Time two drops together for maximum energy peak',
+            energy_direction='up',
+            harmonic_requirements='compatible',
+            structure_preference=['drop', 'chorus']
+        ),
+        'acapella_overlay': TransitionTechnique(
+            name='acapella_overlay',
+            duration_bars=20,
+            description='Layer acapella from Track A over instrumental of Track B',
+            energy_direction='maintain',
+            harmonic_requirements='compatible',
+            structure_preference=['verse', 'chorus']
+        ),
+        'modulation': TransitionTechnique(
+            name='modulation',
+            duration_bars=24,
+            description='Smooth key change during transition',
+            energy_direction='maintain',
+            harmonic_requirements='compatible',
+            structure_preference=['verse', 'chorus', 'breakdown']
+        ),
+        'energy_build': TransitionTechnique(
+            name='energy_build',
+            duration_bars=20,
+            description='Progressive energy increase during transition',
+            energy_direction='up',
+            harmonic_requirements='any',
+            structure_preference=['verse', 'breakdown', 'build']
+        ),
+        'loop_transition': TransitionTechnique(
+            name='loop_transition',
+            duration_bars=16,
+            description='Use loops to create smooth mixing points',
+            energy_direction='maintain',
+            harmonic_requirements='any',
+            structure_preference=['verse', 'chorus', 'breakdown']
+        ),
+        'breakdown_to_build': TransitionTechnique(
+            name='breakdown_to_build',
+            duration_bars=20,
+            description='Transition from breakdown to build section',
+            energy_direction='up',
+            harmonic_requirements='compatible',
+            structure_preference=['breakdown', 'build']
         )
     }
     
@@ -183,6 +247,27 @@ class TransitionStrategist:
             if keys_compatible and vocal_overlap_risk > 0.4 and vocal_overlap_risk < 0.8:
                 if tech_name == 'vocal_layering':
                     score += 0.3  # Good candidate for vocal layering
+                elif tech_name == 'acapella_overlay':
+                    score += 0.3  # Perfect for acapella overlay
+            
+            # New technique-specific scoring
+            if tech_name == 'phrase_match' and keys_compatible:
+                score += 0.3  # Phrase matching works best with compatible keys
+            
+            if tech_name == 'double_drop' and energy_direction == 'up' and section_b in ['drop', 'chorus']:
+                score += 0.4  # Perfect for double drops
+            
+            if tech_name == 'backspin' and energy_direction == 'down' and section_a in ['outro', 'chorus']:
+                score += 0.3  # Good for closing high-energy sections
+            
+            if tech_name == 'modulation' and keys_compatible:
+                score += 0.2  # Modulation requires compatible keys
+            
+            if tech_name == 'energy_build' and energy_direction == 'up':
+                score += 0.3  # Perfect for building energy
+            
+            if tech_name == 'breakdown_to_build' and section_a == 'breakdown' and section_b == 'build':
+                score += 0.4  # Perfect match for breakdown-to-build
             
             technique_scores[tech_name] = score
         
@@ -249,6 +334,41 @@ class TransitionStrategist:
             params['cut_point'] = 'downbeat'
             params['fade_out_ms'] = 100
             params['fade_in_ms'] = 100
+        
+        elif technique == 'phrase_match':
+            params['phrase_length_bars'] = 16  # Default to 16-bar phrases
+            params['align_to_phrase'] = True
+        
+        elif technique == 'backspin':
+            params['spin_speed'] = 0.5  # 0.0 = stop, 1.0 = full reverse
+            params['spin_duration_ratio'] = 0.6  # Last 60% of transition
+            params['tape_stop'] = True  # Simulate tape stop effect
+        
+        elif technique == 'double_drop':
+            params['sync_point_ratio'] = 0.5  # Sync at 50% through transition
+            params['energy_boost'] = 1.2  # 20% volume boost at sync point
+        
+        elif technique == 'acapella_overlay':
+            params['overlay_start_ratio'] = 0.3  # Start overlay at 30%
+            params['vocal_fade_out_ratio'] = 0.7  # Fade out original vocals at 70%
+        
+        elif technique == 'modulation':
+            params['modulation_type'] = 'smooth'  # 'smooth' or 'abrupt'
+            params['key_change_ratio'] = 0.5  # Key change at 50% through
+        
+        elif technique == 'energy_build':
+            params['build_curve'] = 'exponential'  # 'linear', 'exponential', 'logarithmic'
+            params['filter_sweep'] = True  # Use filter sweep during build
+            params['eq_boost'] = True  # Boost highs during build
+        
+        elif technique == 'loop_transition':
+            params['loop_length_bars'] = 4  # 4-bar loop
+            params['loop_repeats'] = 4  # Repeat 4 times
+            params['loop_fade'] = True
+        
+        elif technique == 'breakdown_to_build':
+            params['breakdown_ratio'] = 0.4  # First 40% is breakdown
+            params['build_ratio'] = 0.6  # Last 60% is build
         
         return params
 
