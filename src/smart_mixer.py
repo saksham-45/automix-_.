@@ -651,18 +651,25 @@ class SmartMixer:
             f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"smart_mixer.py:160","message":"_analyze_song_fast start","data":{"y_len":len(y),"duration_sec":len(y)/self.sr},"timestamp":int(time.time()*1000)}) + '\n')
         #endregion
         
-        # Use sample of song for faster analysis (first 60 seconds OR last 60 seconds for mix-out points)
-        # For mix-out, we need the END of the song
+        # Use sample of song for faster analysis
+        # For Song B (incoming): analyze more of the song to find good transition-IN points anywhere
+        # For Song A (outgoing): sample beginning and end to find good mix-out points
         duration = len(y) / self.sr
         if duration > 120:
-            # Sample both beginning (for mix-in) and end (for mix-out)
+            # For long songs, use strategic sampling:
+            # - First 60s: for early mix-in points (intros, builds)
+            # - Middle sections: for later mix-in points (drops, choruses)
+            # - Last 60s: for mix-out points
             sample_length = 60 * self.sr
             y_sample_start = y[:sample_length]
+            # Sample middle sections for Song B (incoming) to find later transition points
+            mid_point = len(y) // 2
+            y_sample_mid = y[mid_point:mid_point + sample_length] if mid_point + sample_length < len(y) else y[mid_point:]
             y_sample_end = y[-sample_length:]
-            # Combine for analysis but remember which is which
-            y_sample = y_sample_start  # Use start for most analysis
+            # Use start for most analysis (key, tempo) but structure analyzer will use full song
+            y_sample = y_sample_start  # For key/tempo detection
         else:
-            y_sample = y
+            y_sample = y  # For short songs, analyze full song
         
         if existing_analysis:
             # Use existing analysis but enhance with new modules
@@ -688,8 +695,11 @@ class SmartMixer:
         #endregion
         
         try:
-            # Limit structure analysis to 30 seconds max to prevent hanging
-            struct_sample = y_sample[:min(30 * self.sr, len(y_sample))]
+            # For structure analysis: analyze MORE of the song for Song B to find good transition points
+            # Analyze up to 60 seconds (or full song if shorter) instead of just 30 seconds
+            # This helps find good transition-IN points later in Song B
+            max_struct_sec = 60 if duration > 60 else duration  # Analyze up to 60s or full song
+            struct_sample = y[:min(int(max_struct_sec * self.sr), len(y))]
             structure = self.structure_analyzer.analyze_structure(struct_sample)
             #region agent log
             struct_time = time.time() - struct_start

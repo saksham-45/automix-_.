@@ -122,9 +122,10 @@ class SmartTransitionFinder:
             search_start = duration * 0.3  # Start searching from 30% into song
             search_end = duration * 0.95   # Up to 95%
         else:
-            # Good "in" points: intros, energy rises, first 70% of song
+            # Good "in" points: can be ANYWHERE in song (intros, build-ups, drops, choruses)
+            # Allow transitions INTO any section of Song B, not just early parts
             search_start = 0
-            search_end = duration * 0.7
+            search_end = duration * 0.95  # Search almost entire song (leave small buffer at very end)
         
         # Sample points at beat positions in search region
         search_beats = [bt for bt in beat_times if search_start <= bt <= search_end]
@@ -285,7 +286,7 @@ class SmartTransitionFinder:
                             return 'breakdown'
                 return 'verse'
         else:
-            # For incoming: prefer intros, build-ups
+            # For incoming: can be intros, build-ups, drops, choruses, verses - anywhere!
             if time_sec < duration * 0.15:
                 return 'intro'
             elif time_sec < duration * 0.3:
@@ -296,7 +297,15 @@ class SmartTransitionFinder:
                             return 'build'
                 return 'intro'
             else:
-                return 'verse'
+                # Later in song - could be drop, chorus, verse, etc.
+                # Check energy in segment to determine
+                for seg in segments:
+                    if seg['start'] <= time_sec <= seg['end']:
+                        if seg['energy'] > 0.75:
+                            return 'drop'  # High energy = drop/chorus
+                        elif seg['energy'] < 0.4:
+                            return 'breakdown'  # Low energy = breakdown/verse
+                return 'verse'  # Default to verse
     
     def _score_transition_point_candidate(self,
                                          time_sec: float,
@@ -322,17 +331,17 @@ class SmartTransitionFinder:
             if 0.4 < position_score < 0.9:
                 score += position_score * 0.3
         else:
-            # Good in points: rising energy, intros, build-ups
-            if label in ['intro', 'build']:
+            # Good in points: rising energy, intros, build-ups, drops, choruses
+            # Don't bias toward early positions - allow transitions into any section
+            if label in ['intro', 'build', 'drop', 'chorus']:
                 score += 0.3
             if trend == 'rising':
                 score += 0.2
             if 0.3 < energy < 0.8:  # Not too quiet, not too loud
                 score += 0.2
-            # Prefer earlier in song
-            position_score = 1.0 - (time_sec / duration)
-            if position_score > 0.5:
-                score += position_score * 0.3
+            # Slight preference for structural sections (intro/build/drop) regardless of position
+            if label in ['intro', 'build', 'drop']:
+                score += 0.1  # Bonus for structural sections anywhere in song
         
         # Beat alignment bonus
         score += 0.1  # Already beat-aligned
