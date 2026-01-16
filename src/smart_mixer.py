@@ -473,8 +473,7 @@ class SmartMixer:
         #region agent log
         exec_start = time.time()
         with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"TECHNIQUE","location":"smart_mixer.py:442","message":"Starting technique execution","data":{"technique":technique['technique_name'],"needs_stems":technique['technique_name'] in stem_required_techniques,"has_stems":seg_a_stems is not None and seg_b_stems is not None},"timestamp":int(time.time()*1000)}) + '
-')
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"TECHNIQUE","location":"smart_mixer.py:442","message":"Starting technique execution","data":{"technique":technique["technique_name"],"needs_stems":technique["technique_name"] in stem_required_techniques,"has_stems":seg_a_stems is not None and seg_b_stems is not None},"timestamp":int(time.time()*1000)}) + '\n')
         #endregion
         
         # Execute technique
@@ -491,37 +490,45 @@ class SmartMixer:
         exec_time = time.time() - exec_start
         mixed_rms = float(np.sqrt(np.mean(mixed**2))) if len(mixed) > 0 else 0
         with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"TECHNIQUE","location":"smart_mixer.py:465","message":"Technique execution complete","data":{"technique":technique['technique_name'],"time_sec":exec_time,"mixed_len":len(mixed),"mixed_rms":mixed_rms},"timestamp":int(time.time()*1000)}) + '
-')
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"TECHNIQUE","location":"smart_mixer.py:465","message":"Technique execution complete","data":{"technique":technique["technique_name"],"time_sec":exec_time,"mixed_len":len(mixed),"mixed_rms":mixed_rms},"timestamp":int(time.time()*1000)}) + "\n")
         #endregion
         
         print(f"[8/8] Mixing with {technique['technique_name']}...")
         
+        # Post-transition quality validation
         #region agent log
-        mix_time = time.time() - mix_start
-        seg_a_rms = float(np.sqrt(np.mean(seg_a**2)))
-        seg_b_rms = float(np.sqrt(np.mean(seg_b**2)))
-        mixed_rms = float(np.sqrt(np.mean(mixed**2)))
-        mixed_max = float(np.max(np.abs(mixed)))
-        vol_a_min = float(np.min(vol_a))
-        vol_a_max = float(np.max(vol_a))
-        vol_b_min = float(np.min(vol_b))
-        vol_b_max = float(np.max(vol_b))
-        # Test hypothesis D: Check if crossfade properly reduces volume
-        mixed_sample_start = mixed[:min(1000, len(mixed))].tolist() if len(mixed) > 0 else []
-        mixed_sample_mid = mixed[len(mixed)//2:len(mixed)//2+min(1000, len(mixed))].tolist() if len(mixed) > 0 else []
-        mixed_sample_end = mixed[-min(1000, len(mixed)):].tolist() if len(mixed) > 0 else []
+        quality_start = time.time()
         with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"smart_mixer.py:343","message":"After apply_crossfade","data":{"mixed_len":len(mixed),"mixed_shape":str(mixed.shape),"time_sec":mix_time,"seg_a_rms":seg_a_rms,"seg_b_rms":seg_b_rms,"mixed_rms":mixed_rms,"mixed_max":mixed_max,"vol_a_range":f"{vol_a_min:.3f}-{vol_a_max:.3f}","vol_b_range":f"{vol_b_min:.3f}-{vol_b_max:.3f}","mixed_sample_start_max":float(np.max(np.abs(mixed[:min(1000, len(mixed))]))) if len(mixed) > 0 else 0,"mixed_sample_mid_max":float(np.max(np.abs(mixed[len(mixed)//2:len(mixed)//2+min(1000, len(mixed))]))) if len(mixed) > 0 else 0,"mixed_sample_end_max":float(np.max(np.abs(mixed[-min(1000, len(mixed)):]))) if len(mixed) > 0 else 0},"timestamp":int(time.time()*1000)}) + '\n')
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"QUALITY","location":"smart_mixer.py:496","message":"Starting quality validation","data":{"technique":technique["technique_name"],"mixed_len":len(mixed)},"timestamp":int(time.time()*1000)}) + '\n')
         #endregion
         
-        # Skip quality assessment for speed (optional, can add back later)
+        quality_assessment = self.quality_assessor.assess_transition_quality(
+            mixed,
+            y_a=seg_a,
+            y_b=seg_b,
+            key_a=analysis_a.get('key'),
+            key_b=analysis_b.get('key')
+        )
+        
+        #region agent log
+        quality_time = time.time() - quality_start
+        with open(log_path, 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"QUALITY","location":"smart_mixer.py:505","message":"Quality assessment complete","data":{"overall_score":quality_assessment["overall_score"],"smoothness":quality_assessment["smoothness"]["score"],"clarity":quality_assessment["clarity"]["score"],"harmonic_tension":quality_assessment["harmonic_tension"],"frequency_balance":quality_assessment["frequency_balance"]["score"],"energy_continuity":quality_assessment["energy_continuity"]["score"],"quality_rating":quality_assessment["quality_rating"],"time_sec":quality_time},"timestamp":int(time.time()*1000)}) + '\n')
+        #endregion
+        
+        quality_threshold = 0.6  # Minimum acceptable quality score
+        if quality_assessment['overall_score'] < quality_threshold:
+            print(f"  ⚠ Quality score {quality_assessment['overall_score']:.2f} below threshold {quality_threshold}")
+            print(f"     Issues: {quality_assessment['quality_rating']}")
+            #region agent log
+            with open(log_path, 'a') as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"QUALITY","location":"smart_mixer.py:516","message":"Quality below threshold - potential retry needed","data":{"overall_score":quality_assessment["overall_score"],"threshold":quality_threshold,"quality_rating":quality_assessment["quality_rating"]},"timestamp":int(time.time()*1000)}) + '\n')
+            #endregion
+        else:
+            print(f"  ✓ Quality score: {quality_assessment['overall_score']:.2f} ({quality_assessment['quality_rating']})")
+        
         print("\n✓ Mix complete")
         
-        # Build final mix with context
-        # FIXED: Extract context correctly - ensure NO overlap with mixed segment
-        context_before = int(10 * self.sr)
-        context_after = int(10 * self.sr)
         
         # Context A: 10 seconds BEFORE the START of seg_a (not before transition point)
         # seg_a starts at: aligned_a - transition_duration
