@@ -118,8 +118,9 @@ class SmartTransitionFinder:
         candidates = []
         
         if is_outgoing:
-            # Good "out" points: endings, breakdowns, energy dips, last 50% of song
-            search_start = duration * 0.3  # Start searching from 30% into song
+            # Good "out" points: endings, breakdowns, energy dips
+            # User requirement: transition out should be at least 3/4 (75%) through the song
+            search_start = duration * 0.75  # Start searching from 75% into song (3/4 point)
             search_end = duration * 0.95   # Up to 95%
         else:
             # Good "in" points: can be ANYWHERE in song (intros, build-ups, drops, choruses)
@@ -326,10 +327,14 @@ class SmartTransitionFinder:
                 score += 0.2
             if energy < 0.4:
                 score += 0.2
-            # Prefer later in song (but not very end)
-            position_score = (time_sec / duration) * 0.5
-            if 0.4 < position_score < 0.9:
-                score += position_score * 0.3
+            # STRONGLY prefer later positions - must be at least 3/4 (75%) through song
+            position_ratio = time_sec / duration
+            if position_ratio < 0.75:  # Penalize early positions (< 75%)
+                score -= 0.5  # Heavy penalty for being too early
+            elif position_ratio >= 0.75 and position_ratio < 0.95:  # Reward 75-95%
+                # Bonus increases with position (later = better, but not too close to end)
+                position_bonus = (position_ratio - 0.75) / 0.2 * 0.4  # 0 to 0.4 bonus
+                score += position_bonus
         else:
             # Good in points: rising energy, intros, build-ups, drops, choruses
             # Don't bias toward early positions - allow transitions into any section

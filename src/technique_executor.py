@@ -475,7 +475,9 @@ class TechniqueExecutor:
         n_samples = len(seg_a_stems.get('drums', seg_a))
         
         # Different transition times for different stems
-        drums_transition_ratio = 0.2
+        # Song A drums fade out EARLY and AGGRESSIVELY to prevent overlap with Song B drums
+        drums_transition_ratio = 0.1  # Start fading Song A drums early (10% into transition)
+        drums_fade_out_ratio = 0.3    # Complete fade out by 30% of transition
         bass_transition_ratio = 0.4
         vocals_transition_ratio = 0.6
         other_transition_ratio = 0.5
@@ -486,13 +488,24 @@ class TechniqueExecutor:
                 {'start': start_ratio, 'end': 1.0, 'fade_type': 'smooth', 'end_value': 0.0}
             ])
         
-        drums_fade_a = create_stem_fade(drums_transition_ratio, n_samples)
+        # Song A drums: fade out COMPLETELY and VERY EARLY to prevent ANY overlap
+        # Start fading immediately and be completely gone by 20% of transition
+        drums_fade_a = crossfade_engine.create_multi_stage_curve(n_samples, [
+            {'start': 0.0, 'end': 0.15, 'fade_type': 'aggressive', 'end_value': 0.0},
+            {'start': 0.15, 'end': 1.0, 'fade_type': 'hold', 'value': 0.0}
+        ])
+        
         bass_fade_a = create_stem_fade(bass_transition_ratio, n_samples)
         vocals_fade_a = create_stem_fade(vocals_transition_ratio, n_samples)
         other_fade_a = create_stem_fade(other_transition_ratio, n_samples)
         
-        # Incoming fades (inverse)
-        drums_fade_b = 1 - drums_fade_a
+        # Song B drums: wait until Song A drums are COMPLETELY gone (20%), then fade in
+        drums_fade_b = crossfade_engine.create_multi_stage_curve(n_samples, [
+            {'start': 0.0, 'end': 0.2, 'fade_type': 'hold', 'value': 0.0},
+            {'start': 0.2, 'end': 0.4, 'fade_type': 'smooth', 'end_value': 1.0},
+            {'start': 0.4, 'end': 1.0, 'fade_type': 'hold', 'value': 1.0}
+        ])
+        
         bass_fade_b = 1 - bass_fade_a
         vocals_fade_b = 1 - vocals_fade_a
         other_fade_b = 1 - other_fade_a

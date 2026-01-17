@@ -190,6 +190,12 @@ class HarmonicAnalyzer:
     
     def _key_to_camelot(self, key: str) -> Optional[Tuple[int, str]]:
         """Convert key notation to Camelot (number, letter)."""
+        # Handle non-string inputs
+        if not isinstance(key, str):
+            return None
+        if not key or len(key) == 0:
+            return None
+        
         # If already Camelot format (e.g., "8B", "3A")
         if len(key) >= 2 and key[-1] in ['A', 'B']:
             try:

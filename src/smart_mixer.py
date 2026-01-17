@@ -271,11 +271,37 @@ class SmartMixer:
         with open(log_path, 'a') as f:
             f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"smart_mixer.py:92","message":"Frequency clash analysis complete","data":{"time_sec":clash_time,"clash_score":clash_score},"timestamp":int(time.time()*1000)}) + '\n')
         #endregion
+        # Extract key - handle both fast analysis (string) and full analysis (dict)
+        key_a = analysis_a.get('key')
+        if isinstance(key_a, dict):
+            key_a = key_a.get('estimated_key', 'C')
+        elif not isinstance(key_a, str):
+            key_a = 'C'
+        
+        key_b = analysis_b.get('key')
+        if isinstance(key_b, dict):
+            key_b = key_b.get('estimated_key', 'C')
+        elif not isinstance(key_b, str):
+            key_b = 'C'
+        
+        # Extract tempo - handle both formats
+        tempo_a = analysis_a.get('tempo')
+        if isinstance(tempo_a, dict):
+            tempo_a = tempo_a.get('bpm', 120.0)
+        elif not isinstance(tempo_a, (int, float)):
+            tempo_a = 120.0
+        
+        tempo_b = analysis_b.get('tempo')
+        if isinstance(tempo_b, dict):
+            tempo_b = tempo_b.get('bpm', 120.0)
+        elif not isinstance(tempo_b, (int, float)):
+            tempo_b = 120.0
+        
         technique = self.transition_strategist.select_technique(
-            analysis_a['key'],
-            analysis_b['key'],
-            analysis_a['tempo'],
-            analysis_b['tempo'],
+            key_a,
+            key_b,
+            tempo_a,
+            tempo_b,
             transition_pair.song_a_point.structural_label,
             transition_pair.song_b_point.structural_label,
             transition_pair.song_a_point.energy,
@@ -519,12 +545,25 @@ class SmartMixer:
             if seg_b is not None and seg_b.ndim > 1:
                 seg_b_mono = np.mean(seg_b, axis=1)
             
+            # Extract keys for quality assessment - handle both formats
+            q_key_a = analysis_a.get('key')
+            if isinstance(q_key_a, dict):
+                q_key_a = q_key_a.get('estimated_key', 'C')
+            elif not isinstance(q_key_a, str):
+                q_key_a = 'C'
+            
+            q_key_b = analysis_b.get('key')
+            if isinstance(q_key_b, dict):
+                q_key_b = q_key_b.get('estimated_key', 'C')
+            elif not isinstance(q_key_b, str):
+                q_key_b = 'C'
+            
             quality_assessment = self.quality_assessor.assess_transition_quality(
                 mixed_mono,
                 y_a=seg_a_mono,
                 y_b=seg_b_mono,
-                key_a=analysis_a.get('key'),
-                key_b=analysis_b.get('key')
+                key_a=q_key_a,
+                key_b=q_key_b
             )
         except Exception as e:
             #region agent log
@@ -673,8 +712,21 @@ class SmartMixer:
         
         if existing_analysis:
             # Use existing analysis but enhance with new modules
-            key = existing_analysis.get('harmony', {}).get('key', 'C')
-            tempo = existing_analysis.get('tempo', {}).get('bpm', 120)
+            harmony_key = existing_analysis.get('harmony', {}).get('key', {})
+            if isinstance(harmony_key, dict):
+                key = harmony_key.get('estimated_key', 'C')
+            elif isinstance(harmony_key, str):
+                key = harmony_key
+            else:
+                key = 'C'
+            
+            tempo_dict = existing_analysis.get('tempo', {})
+            if isinstance(tempo_dict, dict):
+                tempo = tempo_dict.get('bpm', 120)
+            elif isinstance(tempo_dict, (int, float)):
+                tempo = float(tempo_dict)
+            else:
+                tempo = 120
         else:
             # Quick key and tempo detection
             print("    Detecting key...")
@@ -977,7 +1029,7 @@ class SmartMixer:
                         seg_b_eq[i:end_idx] = signal.filtfilt(b, a, chunk) * (0.85 + 0.15 * (1 - bass_cut_b_chunk))
         
         return seg_a_eq, seg_b_eq
-    
+
     def _detect_vocal_start_time(self, vocal_stem: Optional[np.ndarray], total_samples: int) -> float:
         """
         Detect when vocals actually start in Song B.
