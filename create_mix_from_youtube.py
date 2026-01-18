@@ -10,10 +10,20 @@ import argparse
 temp_dir = Path('temp_audio')
 temp_dir.mkdir(exist_ok=True)
 
-def download_youtube_audio(url: str, output_path: Path, max_duration: int = 60) -> Path:
-    """Download audio from YouTube URL, limit to max_duration seconds."""
+def download_youtube_audio(url: str, output_path: Path, max_duration: int = 60, from_end: bool = False) -> Path:
+    """Download audio from YouTube URL, limit to max_duration seconds.
+    
+    Args:
+        url: YouTube URL
+        output_path: Path to save the audio file
+        max_duration: Duration in seconds to extract
+        from_end: If True, extract last N seconds. If False, extract first N seconds.
+    """
     print(f"Downloading: {url}")
-    print(f"  → {output_path.name} (max {max_duration}s)")
+    if from_end:
+        print(f"  → {output_path.name} (last {max_duration}s)")
+    else:
+        print(f"  → {output_path.name} (first {max_duration}s)")
     
     # First download, then trim with ffmpeg for more reliable duration limiting
     temp_output = output_path.parent / f"temp_{output_path.name}"
@@ -51,14 +61,40 @@ def download_youtube_audio(url: str, output_path: Path, max_duration: int = 60) 
         if actual_file and actual_file.exists():
             # Trim to max_duration using ffmpeg
             if max_duration > 0:
-                print(f"  Trimming to {max_duration} seconds...")
-                trim_cmd = [
-                    'ffmpeg', '-y', '-i', str(actual_file),
-                    '-t', str(max_duration),
-                    '-acodec', 'pcm_s16le',
-                    '-ar', '44100',
-                    str(output_path)
-                ]
+                if from_end:
+                    # Get video duration first if we need the last N seconds
+                    probe_cmd = [
+                        'ffprobe', '-v', 'error',
+                        '-show_entries', 'format=duration',
+                        '-of', 'default=noprint_wrappers=1:nokey=1',
+                        str(actual_file)
+                    ]
+                    probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, check=True)
+                    total_duration = float(probe_result.stdout.strip())
+                    
+                    # Calculate start time (last N seconds)
+                    start_time = max(0, total_duration - max_duration)
+                    print(f"  Extracting last {max_duration}s (from {start_time:.1f}s to {total_duration:.1f}s)...")
+                    
+                    trim_cmd = [
+                        'ffmpeg', '-y', '-i', str(actual_file),
+                        '-ss', str(start_time),  # Seek to start position
+                        '-t', str(max_duration),  # Extract N seconds
+                        '-acodec', 'pcm_s16le',
+                        '-ar', '44100',
+                        str(output_path)
+                    ]
+                else:
+                    # Extract first N seconds (existing behavior)
+                    print(f"  Trimming to first {max_duration} seconds...")
+                    trim_cmd = [
+                        'ffmpeg', '-y', '-i', str(actual_file),
+                        '-t', str(max_duration),
+                        '-acodec', 'pcm_s16le',
+                        '-ar', '44100',
+                        str(output_path)
+                    ]
+                
                 subprocess.run(trim_cmd, capture_output=True, check=True)
                 actual_file.unlink()  # Delete temp file
             else:
@@ -116,8 +152,10 @@ def main():
     
     try:
         # Download both songs
-        download_youtube_audio(args.url1, song_a_path, args.duration)
-        download_youtube_audio(args.url2, song_b_path, args.duration)
+        # Song A: last 60 seconds (from_end=True)
+        download_youtube_audio(args.url1, song_a_path, args.duration, from_end=True)
+        # Song B: first 60 seconds (from_end=False)
+        download_youtube_audio(args.url2, song_b_path, args.duration, from_end=False)
         
         print("\n" + "="*60)
         print("CREATING MIX")
