@@ -88,6 +88,10 @@ class SmartTransitionFinder:
             List of candidate TransitionPoints, sorted by score (best first)
         """
         duration = len(y) / sr
+        import json
+        log_path = '/Users/saksham/untitled folder 7/.cursor/debug.log'
+        with open(log_path, 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"TRANSITION","location":"smart_transition_finder.py:90","message":"_find_transition_points start","data":{"duration_sec":duration,"is_outgoing":is_outgoing},"timestamp":int(1768845000000)}) + '\n')
         
         # Analyze structure
         tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, hop_length=self.hop_length)
@@ -118,20 +122,59 @@ class SmartTransitionFinder:
         candidates = []
         
         if is_outgoing:
-            # Good "out" points: endings, breakdowns, energy dips
-            # User requirement: transition out should be at least 3/4 (75%) through the song
-            search_start = duration * 0.75  # Start searching from 75% into song (3/4 point)
-            search_end = duration * 0.95   # Up to 95%
+            # Good "out" points: endings, breakdowns, energy dips, second half of song
+            search_start = duration * 0.5  # Focus on the last half of the song
+            search_end = duration * 0.98   # Up to 98%
         else:
             # Good "in" points: can be ANYWHERE in song (intros, build-ups, drops, choruses)
-            # Allow transitions INTO any section of Song B, not just early parts
+            # But prefer early sections for smoother entry unless it's a specific drop mix
             search_start = 0
-            search_end = duration * 0.95  # Search almost entire song (leave small buffer at very end)
+            search_end = duration * 0.5    # Typically mix into the first half
         
         # Sample points at beat positions in search region
         search_beats = [bt for bt in beat_times if search_start <= bt <= search_end]
         
+        # Specifically add structural boundaries as candidates
+        struct_points = []
+        if is_outgoing:
+            # Use mix-out points from structure analyzer if available
+            struct_points = self._get_structural_boundaries(y, sr, is_outgoing=True)
+        else:
+            struct_points = self._get_structural_boundaries(y, sr, is_outgoing=False)
+            
+        for time_sec in struct_points:
+            if not (search_start <= time_sec <= search_end):
+                with open(log_path, 'a') as f:
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"TRANSITION","location":"smart_transition_finder.py:141","message":"Skipped struct point (out of range)","data":{"time_sec":time_sec,"range":[search_start, search_end]},"timestamp":int(1768845000000)}) + '\n')
+                continue
+                
+            beat_idx = np.argmin(np.abs(frame_times - time_sec))
+            energy_val = frame_energy[beat_idx] if beat_idx < len(frame_energy) else 0.5
+            trend = 'stable' # Trend at boundary is usually neutral or dip
+            label = self._get_segment_label(time_sec, segments, duration, is_outgoing)
+            
+            score = self._score_transition_point_candidate(
+                time_sec, energy_val, trend, label,
+                is_outgoing, duration, beat_times
+            )
+            score += 0.2  # Bonus for being an exact structural boundary
+            
+            beat_pos = np.argmin(np.abs(beat_times - time_sec))
+            candidates.append(TransitionPoint(
+                time_sec=float(time_sec),
+                beat_aligned=True,
+                energy=float(energy_val),
+                energy_trend=trend,
+                structural_label=label,
+                score=float(score),
+                beat_position=beat_pos
+            ))
+
         for beat_time in search_beats[::4]:  # Every 4th beat (bar boundaries)
+            # Avoid duplicating points already added via structural boundaries
+            if any(abs(c.time_sec - beat_time) < 0.1 for c in candidates):
+                continue
+                
             beat_idx = np.argmin(np.abs(frame_times - beat_time))
             if beat_idx >= len(frame_energy):
                 continue
@@ -166,7 +209,7 @@ class SmartTransitionFinder:
             if score > 0.3:  # Threshold
                 beat_pos = np.argmin(np.abs(beat_times - beat_time))
                 candidates.append(TransitionPoint(
-                    time_sec=beat_time,
+                    time_sec=float(beat_time),
                     beat_aligned=True,
                     energy=float(energy_val),
                     energy_trend=trend,
@@ -307,6 +350,22 @@ class SmartTransitionFinder:
                         elif seg['energy'] < 0.4:
                             return 'breakdown'  # Low energy = breakdown/verse
                 return 'verse'  # Default to verse
+
+    def _get_structural_boundaries(self, y: np.ndarray, sr: int, is_outgoing: bool) -> List[float]:
+        """Get structural boundaries from the song."""
+        try:
+            # Run structure analysis on the audio
+            # Use a slightly longer sample for better context
+            sample_len = min(len(y), int(sr * 180)) # Analyze up to 3 mins
+            analysis = self.structure_analyzer.analyze_structure(y[:sample_len])
+            
+            if is_outgoing:
+                return analysis.get('best_mix_out_points', [])
+            else:
+                return analysis.get('best_mix_in_points', [])
+        except Exception as e:
+            print(f"  ⚠ Failed to get structural boundaries: {e}")
+            return []
     
     def _score_transition_point_candidate(self,
                                          time_sec: float,
@@ -327,14 +386,10 @@ class SmartTransitionFinder:
                 score += 0.2
             if energy < 0.4:
                 score += 0.2
-            # STRONGLY prefer later positions - must be at least 3/4 (75%) through song
-            position_ratio = time_sec / duration
-            if position_ratio < 0.75:  # Penalize early positions (< 75%)
-                score -= 0.5  # Heavy penalty for being too early
-            elif position_ratio >= 0.75 and position_ratio < 0.95:  # Reward 75-95%
-                # Bonus increases with position (later = better, but not too close to end)
-                position_bonus = (position_ratio - 0.75) / 0.2 * 0.4  # 0 to 0.4 bonus
-                score += position_bonus
+            # Prefer later in song (but not very end)
+            position_score = (time_sec / duration) * 0.5
+            if 0.4 < position_score < 0.9:
+                score += position_score * 0.3
         else:
             # Good in points: rising energy, intros, build-ups, drops, choruses
             # Don't bias toward early positions - allow transitions into any section

@@ -7,5 +7,8 @@ soundfile>=0.12.0
 torch>=2.0.0
 yt-dlp>=2023.0.0
 demucs>=4.0.0
-sounddevice>=0.4.6
-opencv-python>=4.8.0
+
+# Web API
+flask>=3.0.0
+flask-cors>=4.0.0
+werkzeug>=3.0.0

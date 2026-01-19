@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Mix Player - Real-Time</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+        .mix-input {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .mix-input input {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 5px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            font-size: 16px;
+        }
+        .mix-input input::placeholder {
+            color: rgba(255,255,255,0.5);
+        }
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            background: #4CAF50;
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        .status-panel {
+            background: rgba(255,255,255,0.1);
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .status-item {
+            margin: 15px 0;
+            font-size: 1.1em;
+        }
+        .status-label {
+            font-weight: bold;
+            color: #4CAF50;
+            display: inline-block;
+            width: 200px;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 15px 0;
+            position: relative;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50, #45a049);
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stream-info {
+            background: rgba(0,255,0,0.1);
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            word-break: break-all;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .stream-info code {
+            color: #4CAF50;
+        }
+        .hidden {
+            display: none;
+        }
+        audio {
+            width: 100%;
+            margin: 20px 0;
+        }
+        .error {
+            background: rgba(255,0,0,0.2);
+            padding: 15px;
+            border-radius: 5px;
+            color: #ff6b6b;
+            margin: 15px 0;
+        }
+        .success {
+            background: rgba(0,255,0,0.1);
+            padding: 15px;
+            border-radius: 5px;
+            color: #4CAF50;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎵 Mix Player</h1>
+        
+        <div class="mix-input">
+            <input type="text" id="mix-id-input" placeholder="Enter Mix ID (e.g. aa217a39)" value="aa217a39">
+            <button onclick="loadMix()">Load Mix</button>
+        </div>
+        
+        <div id="error-message" class="error hidden"></div>
+        <div id="success-message" class="success hidden"></div>
+        
+        <div id="mix-panel" class="hidden">
+            <div class="status-panel">
+                <h2>📊 Mix Status</h2>
+                <div class="status-item">
+                    <span class="status-label">Mix ID:</span>
+                    <span id="mix-id-display">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Processing Status:</span>
+                    <span id="processing-status">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Songs Ready:</span>
+                    <span id="songs-ready">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Chunks Ready:</span>
+                    <span id="chunks-ready">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Current Song:</span>
+                    <span id="current-song">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Next Song:</span>
+                    <span id="next-song">-</span>
+                </div>
+                
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill" style="width: 0%">
+                        <span id="progress-text">0%</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="stream-info">
+                <strong>📡 Stream URL:</strong><br>
+                <code id="stream-url">-</code>
+            </div>
+            
+            <div class="controls">
+                <button id="play-btn" onclick="togglePlay()">▶️ Play</button>
+                <button id="stop-btn" onclick="stopPlay()">⏹️ Stop</button>
+                <button onclick="copyStreamUrl()">📋 Copy Stream URL</button>
+            </div>
+            
+            <audio id="audio-player" controls preload="auto"></audio>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = 'http://127.0.0.1:5001/api';
+        let currentMixId = null;
+        let currentChunk = 0;
+        let isPlaying = false;
+        let updateInterval = null;
+        let statusInterval = null;
+        
+        function showError(msg) {
+            const el = document.getElementById('error-message');
+            el.textContent = msg;
+            el.classList.remove('hidden');
+            document.getElementById('success-message').classList.add('hidden');
+        }
+        
+        function showSuccess(msg) {
+            const el = document.getElementById('success-message');
+            el.textContent = msg;
+            el.classList.remove('hidden');
+            document.getElementById('error-message').classList.add('hidden');
+        }
+        
+        function hideMessages() {
+            document.getElementById('error-message').classList.add('hidden');
+            document.getElementById('success-message').classList.add('hidden');
+        }
+        
+        async function loadMix() {
+            const mixId = document.getElementById('mix-id-input').value.trim();
+            if (!mixId) {
+                showError('Please enter a Mix ID');
+                return;
+            }
+            
+            hideMessages();
+            currentMixId = mixId;
+            
+            try {
+                const response = await fetch(`${API_BASE}/mix/${mixId}`);
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        showError(`Mix ${mixId} not found. Make sure it's active.`);
+                        return;
+                    }
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const status = await response.json();
+                displayMix(status);
+                showSuccess(`Mix ${mixId} loaded successfully!`);
+                
+                // Start status updates
+                if (statusInterval) clearInterval(statusInterval);
+                statusInterval = setInterval(() => updateStatus(), 2000);
+                
+            } catch (error) {
+                showError(`Error loading mix: ${error.message}`);
+                console.error(error);
+            }
+        }
+        
+        function displayMix(status) {
+            document.getElementById('mix-panel').classList.remove('hidden');
+            document.getElementById('mix-id-display').textContent = currentMixId;
+            document.getElementById('processing-status').textContent = status.processing_status || 'N/A';
+            document.getElementById('songs-ready').textContent = `${status.songs_ready || 0}/${status.total_songs_in_playlist || 0}`;
+            document.getElementById('chunks-ready').textContent = `${status.chunks_ready || 0}/${status.total_chunks || 0}`;
+            document.getElementById('current-song').textContent = status.current_song || '-';
+            document.getElementById('next-song').textContent = status.next_song || '-';
+            
+            const total = status.total_songs_in_playlist || status.total_chunks || 1;
+            const ready = status.songs_ready || status.chunks_ready || 0;
+            const pct = (ready / total * 100).toFixed(1);
+            document.getElementById('progress-fill').style.width = pct + '%';
+            document.getElementById('progress-text').textContent = pct + '%';
+            
+            const streamUrl = `${API_BASE}/stream/${currentMixId}/audio?chunk=0`;
+            document.getElementById('stream-url').textContent = streamUrl;
+        }
+        
+        async function updateStatus() {
+            if (!currentMixId) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/mix/${currentMixId}`);
+                if (response.ok) {
+                    const status = await response.json();
+                    displayMix(status);
+                }
+            } catch (error) {
+                console.error('Status update error:', error);
+            }
+        }
+        
+        function playChunk(chunkIndex) {
+            const audioPlayer = document.getElementById('audio-player');
+            const playBtn = document.getElementById('play-btn');
+            
+            const streamUrl = `${API_BASE}/stream/${currentMixId}/audio?chunk=${chunkIndex}`;
+            audioPlayer.src = streamUrl;
+            audioPlayer.load();
+            
+            audioPlayer.oncanplay = () => {
+                audioPlayer.play().catch(e => {
+                    console.error('Play error:', e);
+                    showError('Playback error: ' + e.message);
+                });
+            };
+            
+            audioPlayer.onended = () => {
+                if (isPlaying) {
+                    currentChunk++;
+                    playChunk(currentChunk); // Directly play next chunk
+                }
+            };
+            
+            audioPlayer.onerror = (e) => {
+                console.error('Audio error:', e);
+                // Retry logic if chunk isn't ready
+                console.log('Chunk not ready, retrying in 2s...');
+                setTimeout(() => {
+                    if (isPlaying) {
+                        playChunk(chunkIndex); // Retry same chunk
+                    }
+                }, 2000);
+            };
+            
+            isPlaying = true;
+            playBtn.textContent = '⏸️ Pause';
+        }
+
+        function togglePlay() {
+            if (!currentMixId) return;
+            
+            const audioPlayer = document.getElementById('audio-player');
+            const playBtn = document.getElementById('play-btn');
+            
+            if (isPlaying) {
+                audioPlayer.pause();
+                isPlaying = false;
+                playBtn.textContent = '▶️ Play';
+                if (updateInterval) {
+                    clearInterval(updateInterval);
+                    updateInterval = null;
+                }
+            } else {
+                playChunk(currentChunk);
+            }
+        }
+        
+        function stopPlay() {
+            const audioPlayer = document.getElementById('audio-player');
+            audioPlayer.pause();
+            isPlaying = false;
+            currentChunk = 0;
+            document.getElementById('play-btn').textContent = '▶️ Play';
+            if (updateInterval) {
+                clearInterval(updateInterval);
+                updateInterval = null;
+            }
+        }
+        
+        function copyStreamUrl() {
+            const streamUrl = document.getElementById('stream-url').textContent;
+            navigator.clipboard.writeText(streamUrl).then(() => {
+                showSuccess('Stream URL copied to clipboard!');
+            }).catch(() => {
+                showError('Failed to copy to clipboard');
+            });
+        }
+        
+        // Auto-load if mix ID is in URL
+        window.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const mixId = urlParams.get('mix');
+            if (mixId) {
+                document.getElementById('mix-id-input').value = mixId;
+                loadMix();
+            } else {
+                // Auto-load default mix
+                loadMix();
+            }
+        });
+    </script>
+</body>
+</html>

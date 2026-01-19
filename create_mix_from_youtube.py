@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Download two YouTube videos and create a mix"""
 import sys
-import subprocess
-import shutil
 from pathlib import Path
 import argparse
 
@@ -10,85 +8,8 @@ import argparse
 temp_dir = Path('temp_audio')
 temp_dir.mkdir(exist_ok=True)
 
-def download_youtube_audio(url: str, output_path: Path, max_duration: int = 60) -> Path:
-    """Download audio from YouTube URL, limit to max_duration seconds."""
-    print(f"Downloading: {url}")
-    print(f"  → {output_path.name} (max {max_duration}s)")
-    
-    # First download, then trim with ffmpeg for more reliable duration limiting
-    temp_output = output_path.parent / f"temp_{output_path.name}"
-    
-    # Use yt-dlp to download audio
-    cmd = [
-        'yt-dlp',
-        '-x',  # Extract audio
-        '--audio-format', 'wav',
-        '--audio-quality', '0',  # Best quality
-        '--no-playlist',
-        '-o', str(temp_output).replace('.wav', '.%(ext)s'),
-        url
-    ]
-    
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        
-        # yt-dlp outputs with pattern: temp_song_a.wav or temp_song_a.opus (then converts)
-        # Find any file that matches our temp pattern
-        temp_pattern = temp_output.stem
-        candidates = list(output_path.parent.glob(f"{temp_pattern}.*"))
-        actual_file = None
-        
-        # Prefer .wav, then any audio file
-        for ext in ['.wav', '.opus', '.m4a', '.mp3']:
-            candidate = output_path.parent / f"{temp_pattern}{ext}"
-            if candidate.exists():
-                actual_file = candidate
-                break
-        
-        if not actual_file and candidates:
-            actual_file = candidates[0]
-        
-        if actual_file and actual_file.exists():
-            # Trim to max_duration using ffmpeg
-            if max_duration > 0:
-                print(f"  Trimming to {max_duration} seconds...")
-                trim_cmd = [
-                    'ffmpeg', '-y', '-i', str(actual_file),
-                    '-t', str(max_duration),
-                    '-acodec', 'pcm_s16le',
-                    '-ar', '44100',
-                    str(output_path)
-                ]
-                subprocess.run(trim_cmd, capture_output=True, check=True)
-                actual_file.unlink()  # Delete temp file
-            else:
-                # Convert/rename to .wav if needed
-                if actual_file.suffix != '.wav':
-                    convert_cmd = [
-                        'ffmpeg', '-y', '-i', str(actual_file),
-                        '-acodec', 'pcm_s16le', '-ar', '44100',
-                        str(output_path)
-                    ]
-                    subprocess.run(convert_cmd, capture_output=True, check=True)
-                    actual_file.unlink()
-                elif actual_file != output_path:
-                    shutil.move(str(actual_file), str(output_path))
-            
-            if output_path.exists():
-                print(f"  ✓ Downloaded: {output_path.stat().st_size / 1024 / 1024:.1f} MB")
-                return output_path
-            else:
-                raise FileNotFoundError(f"Output file not created: {output_path}")
-        else:
-            raise FileNotFoundError(f"Downloaded file not found: {output_path}")
-            
-    except subprocess.CalledProcessError as e:
-        print(f"  ✗ Error downloading: {e}")
-        print(f"  stderr: {e.stderr[:200]}")
-        raise
-    except FileNotFoundError as e:
-        print(f"  ✗ {e}")
-        raise
+# Use extracted download function
+from src.youtube_downloader import download_youtube_audio
 
 def main():
     parser = argparse.ArgumentParser(description='Create DJ mix from two YouTube URLs')
@@ -116,8 +37,10 @@ def main():
     
     try:
         # Download both songs
-        download_youtube_audio(args.url1, song_a_path, args.duration)
-        download_youtube_audio(args.url2, song_b_path, args.duration)
+        # Song A: last 60 seconds (from_end=True)
+        download_youtube_audio(args.url1, song_a_path, args.duration, from_end=True)
+        # Song B: first 60 seconds (from_end=False)
+        download_youtube_audio(args.url2, song_b_path, args.duration, from_end=False)
         
         print("\n" + "="*60)
         print("CREATING MIX")
@@ -153,4 +76,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

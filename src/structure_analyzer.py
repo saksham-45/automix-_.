@@ -61,8 +61,8 @@ class StructureAnalyzer:
             f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"structure_analyzer.py:47","message":"Starting structure analysis","data":{"audio_len":len(y),"duration_sec":len(y)/self.sr},"timestamp":int(time.time()*1000)}) + '\n')
         #endregion
         
-        # CRITICAL: Limit to 60 seconds max to prevent hanging on long files
-        max_duration_sec = 60
+        # CRITICAL: Increased limit to 600 seconds (10 mins) to allow full song structure
+        max_duration_sec = 600
         max_samples = max_duration_sec * self.sr
         if len(y) > max_samples:
             # Use first portion for structure analysis

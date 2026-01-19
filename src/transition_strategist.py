@@ -207,9 +207,11 @@ class TransitionStrategist:
         
         # Score each technique
         technique_scores = {}
+        import random
         
         for tech_name, tech in self.TECHNIQUES.items():
-            score = 0.0
+            # Start with a small random jitter to avoid repetitive selections
+            score = random.uniform(0.0, 0.1)
             
             # Harmonic compatibility
             if tech.harmonic_requirements == 'compatible' and keys_compatible:
@@ -228,9 +230,10 @@ class TransitionStrategist:
                 score += 0.2
             
             # Frequency clash considerations
-            if clash_score > 0.5 and tech_name == 'bass_swap':
-                score += 0.3
-            elif clash_score < 0.3 and tech_name == 'long_blend':
+            if clash_score > 0.4:
+                if tech_name in ['bass_swap', 'filter_sweep', 'staggered_stem_mix']:
+                    score += 0.4  # These handle clashes well
+            elif clash_score < 0.2 and tech_name == 'long_blend':
                 score += 0.2
             
             # Vocal overlap considerations
@@ -252,7 +255,13 @@ class TransitionStrategist:
             
             # New technique-specific scoring
             if tech_name == 'phrase_match' and keys_compatible:
-                score += 0.3  # Phrase matching works best with compatible keys
+                score += 0.2  # Reduced bonus to allow other techniques to win
+            
+            if tech_name == 'bass_swap' and section_a in ['chorus', 'verse'] and section_b in ['verse', 'chorus']:
+                score += 0.35 # Strongly favor bass swap for building/maintaining grooves
+                
+            if tech_name == 'filter_sweep' and section_a == 'outro':
+                score += 0.4  # Sweeping out of an outro is classic and smooth
             
             if tech_name == 'double_drop' and energy_direction == 'up' and section_b in ['drop', 'chorus']:
                 score += 0.4  # Perfect for double drops

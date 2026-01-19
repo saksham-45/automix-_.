@@ -1,0 +1,15 @@
+{
+  "transition_point_a": 113.01151927437641,
+  "transition_point_b": 4.493061224489796,
+  "transition_duration": 16.0,
+  "key_a": "D",
+  "key_b": "F#",
+  "bpm_a": 120.0,
+  "bpm_b": 120.0,
+  "technique": "modulation",
+  "start_time_from_end": 123.71736961451248,
+  "transition_start_a": 97.01151927437641,
+  "transition_start_b": 4.493061224489796,
+  "transition_index": 0,
+  "song_a_duration": 220.7288888888889
+}

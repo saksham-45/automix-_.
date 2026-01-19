@@ -252,15 +252,17 @@ class TechniqueExecutor:
             progress = i / n_samples
             
             # Calculate cutoff for this chunk
-            if filter_type == 'high_pass':
+            if 'high' in filter_type:
                 cutoff_hz = filter_start_hz + (filter_end_hz - filter_start_hz) * progress
                 cutoff = min(cutoff_hz / nyq, 0.99)
+                btype = 'high'
             else:  # low_pass
                 cutoff_hz = filter_end_hz - (filter_end_hz - filter_start_hz) * progress
                 cutoff = max(cutoff_hz / nyq, 0.01)
+                btype = 'low'
             
             # Apply filter
-            b, a = signal.butter(2, cutoff, btype=filter_type)
+            b, a = signal.butter(2, cutoff, btype=btype)
             
             for ch in range(seg_a_filtered.shape[1]):
                 chunk = seg_a_filtered[i:end_idx, ch]
@@ -621,8 +623,12 @@ class TechniqueExecutor:
                               params: Dict,
                               seg_a_stems: Optional[Dict] = None,
                               seg_b_stems: Optional[Dict] = None) -> np.ndarray:
-        """Execute phrase match: align transition to phrase boundaries."""
-        # Phrase matching is mostly about timing (handled upstream)
+        """Execute phrase match with aggressive frequency management."""
+        if seg_a_stems is not None and seg_b_stems is not None:
+            # Use stem-aware phrase match for cleaner transition
+            return self._execute_staggered_stem_mix(seg_a, seg_b, params, seg_a_stems, seg_b_stems)
+        
+        # Fallback to smart blend if no stems
         return self._execute_long_blend(seg_a, seg_b, params, seg_a_stems, seg_b_stems)
     
     def _execute_backspin(self,
@@ -771,12 +777,16 @@ class TechniqueExecutor:
                            params: Dict,
                            seg_a_stems: Optional[Dict] = None,
                            seg_b_stems: Optional[Dict] = None) -> np.ndarray:
-        """Execute modulation: smooth key change during transition."""
+        """Execute modulation: aggressive removal of outgoing vocals/drums."""
+        if seg_a_stems is not None and seg_b_stems is not None:
+            # Vocal Layering is a great 'modulation' strategy for harmonic tracks
+            return self._execute_vocal_layering(seg_a, seg_b, params, seg_a_stems, seg_b_stems)
+            
         from src.crossfade_engine import CrossfadeEngine
         crossfade_engine = CrossfadeEngine(sr=self.sr)
         
         n_samples = min(len(seg_a), len(seg_b))
-        vol_a, vol_b = crossfade_engine.create_equal_power_crossfade(n_samples, 'smooth')
+        vol_a, vol_b = crossfade_engine.create_equal_power_crossfade(n_samples, 'aggressive')
         
         if seg_a.ndim == 1:
             seg_a = np.column_stack([seg_a, seg_a])

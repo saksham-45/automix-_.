@@ -140,7 +140,7 @@ class SmartMixer:
                          transition_duration: Optional[float] = None,
                          song_a_analysis: Optional[Dict] = None,
                          song_b_analysis: Optional[Dict] = None,
-                         ai_transition_data: Optional[Dict] = None) -> np.ndarray:
+                         ai_transition_data: Optional[Dict] = None) -> Tuple[np.ndarray, Dict]:
         """
         Create a human-level smooth mix using all advanced modules.
         """
@@ -254,6 +254,16 @@ class SmartMixer:
         print("[5/8] Selecting transition technique...")
         
         #region agent log
+        # Check analysis structure before accessing
+        key_a_raw = analysis_a.get('key') if isinstance(analysis_a, dict) else None
+        key_b_raw = analysis_b.get('key') if isinstance(analysis_b, dict) else None
+        tempo_a_raw = analysis_a.get('tempo') if isinstance(analysis_a, dict) else None
+        tempo_b_raw = analysis_b.get('tempo') if isinstance(analysis_b, dict) else None
+        with open(log_path, 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"smart_mixer.py:256","message":"Before select_technique - checking analysis structure","data":{"analysis_a_keys":list(analysis_a.keys()) if isinstance(analysis_a, dict) else [],"analysis_b_keys":list(analysis_b.keys()) if isinstance(analysis_b, dict) else [],"key_a_type":type(key_a_raw).__name__,"key_b_type":type(key_b_raw).__name__,"tempo_a_type":type(tempo_a_raw).__name__,"tempo_b_type":type(tempo_b_raw).__name__,"key_a_value":str(key_a_raw)[:50] if key_a_raw else None,"key_b_value":str(key_b_raw)[:50] if key_b_raw else None},"timestamp":int(time.time()*1000)}) + '\n')
+        #endregion
+        
+        #region agent log
         clash_start = time.time()
         with open(log_path, 'a') as f:
             f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"smart_mixer.py:88","message":"Starting frequency clash analysis","data":{"y_a_len":len(y_a),"y_b_len":len(y_b)},"timestamp":int(time.time()*1000)}) + '\n')
@@ -271,31 +281,32 @@ class SmartMixer:
         with open(log_path, 'a') as f:
             f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"smart_mixer.py:92","message":"Frequency clash analysis complete","data":{"time_sec":clash_time,"clash_score":clash_score},"timestamp":int(time.time()*1000)}) + '\n')
         #endregion
-        # Extract key - handle both fast analysis (string) and full analysis (dict)
-        key_a = analysis_a.get('key')
+        #region agent log
+        # Extract key and tempo safely from analysis
+        key_a = analysis_a.get('key') if isinstance(analysis_a, dict) else 'C'
+        key_b = analysis_b.get('key') if isinstance(analysis_b, dict) else 'C'
+        tempo_a = analysis_a.get('tempo') if isinstance(analysis_a, dict) else 120.0
+        tempo_b = analysis_b.get('tempo') if isinstance(analysis_b, dict) else 120.0
+        
+        # Handle nested structures if needed
         if isinstance(key_a, dict):
             key_a = key_a.get('estimated_key', 'C')
-        elif not isinstance(key_a, str):
-            key_a = 'C'
-        
-        key_b = analysis_b.get('key')
         if isinstance(key_b, dict):
             key_b = key_b.get('estimated_key', 'C')
-        elif not isinstance(key_b, str):
-            key_b = 'C'
-        
-        # Extract tempo - handle both formats
-        tempo_a = analysis_a.get('tempo')
         if isinstance(tempo_a, dict):
             tempo_a = tempo_a.get('bpm', 120.0)
-        elif not isinstance(tempo_a, (int, float)):
-            tempo_a = 120.0
-        
-        tempo_b = analysis_b.get('tempo')
         if isinstance(tempo_b, dict):
             tempo_b = tempo_b.get('bpm', 120.0)
-        elif not isinstance(tempo_b, (int, float)):
-            tempo_b = 120.0
+        
+        # Ensure strings/numbers
+        key_a = str(key_a) if key_a else 'C'
+        key_b = str(key_b) if key_b else 'C'
+        tempo_a = float(tempo_a) if tempo_a else 120.0
+        tempo_b = float(tempo_b) if tempo_b else 120.0
+        
+        with open(log_path, 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"smart_mixer.py:274","message":"Calling select_technique","data":{"key_a":key_a,"key_b":key_b,"tempo_a":tempo_a,"tempo_b":tempo_b},"timestamp":int(time.time()*1000)}) + '\n')
+        #endregion
         
         technique = self.transition_strategist.select_technique(
             key_a,
@@ -308,6 +319,11 @@ class SmartMixer:
             transition_pair.song_b_point.energy,
             clash_score
         )
+        
+        #region agent log
+        with open(log_path, 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"smart_mixer.py:291","message":"select_technique SUCCESS","data":{"technique_name":technique.get('technique_name') if isinstance(technique, dict) else None},"timestamp":int(time.time()*1000)}) + '\n')
+        #endregion
         
         # Get technique-specific parameters
         technique_params = self.transition_strategist.get_technique_parameters(
@@ -347,116 +363,89 @@ class SmartMixer:
         seg_a_stems = None
         seg_b_stems = None
         
-        # Stem separation for smooth transitions (prevent drums/bass from carrying over)
-        if self.stem_separation_enabled and self.stem_separator is not None:
-            print("  Separating stems to fade out heavy instruments...")
-            try:
-                #region agent log
-                stem_start = time.time()
-                with open(log_path, 'a') as f:
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"STEM","location":"smart_mixer.py:312","message":"Starting stem separation","data":{"seg_a_len":len(seg_a)},"timestamp":int(time.time()*1000)}) + '\n')
-                #endregion
-                
-                # Separate stems from song A (outgoing track)
-                seg_a_stems = self.stem_separator.separate_segment(seg_a, self.sr)
-                
-                # Also separate stems from song B to detect when vocals start
-                seg_b_stems = self.stem_separator.separate_segment(seg_b, self.sr)
-                
-                #region agent log
-                stem_time = time.time() - stem_start
-                with open(log_path, 'a') as f:
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"STEM","location":"smart_mixer.py:318","message":"Stem separation complete","data":{"time_sec":stem_time,"stems_available":list(seg_a_stems.keys())},"timestamp":int(time.time()*1000)}) + '\n')
-                #endregion
-                
-                # Detect when Song B's vocals start
-                vocal_start_time_ratio = self._detect_vocal_start_time(
-                    seg_b_stems.get('vocals', None), 
-                    len(seg_b)
-                )
-                
-                #region agent log
-                with open(log_path, 'a') as f:
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"VOCAL","location":"smart_mixer.py:325","message":"Vocal start detected","data":{"vocal_start_ratio":vocal_start_time_ratio},"timestamp":int(time.time()*1000)}) + '\n')
-                #endregion
-                
-                # Create fast fade curves for drums and bass
-                n_samples = len(seg_a)
-                drums_fade = self.crossfade_engine.create_fast_fade(n_samples, fade_out_ratio=self.drums_fade_ratio)
-                bass_fade = self.crossfade_engine.create_fast_fade(n_samples, fade_out_ratio=self.bass_fade_ratio)
-                
-                # Create aggressive vocal fade for Song A vocals
-                # Fade gradually until Song B vocals start, then drop suddenly at end
-                vocal_fade = self.crossfade_engine.create_aggressive_vocal_fade(
-                    n_samples,
-                    vocal_start_time_ratio=vocal_start_time_ratio,
-                    aggressive_drop_ratio=0.9  # Sudden drop in last 10%
-                )
-                
-                # Apply fades to stems
-                seg_a_processed = np.zeros_like(seg_a)
-                
-                # Process drums with fast fade
-                if 'drums' in seg_a_stems and 'drums' in self.separate_stems:
-                    # Ensure fade curve matches audio shape
-                    if drums_fade.ndim == 1:
-                        drums_fade_2d = drums_fade[:, np.newaxis]  # [samples, 1]
-                    else:
-                        drums_fade_2d = drums_fade
-                    # Ensure shapes match
-                    if seg_a_stems['drums'].shape[1] == drums_fade_2d.shape[1] or drums_fade_2d.shape[1] == 1:
-                        drums_faded = seg_a_stems['drums'] * drums_fade_2d
-                    else:
-                        drums_faded = seg_a_stems['drums'] * drums_fade[:, np.newaxis]
-                    seg_a_processed += drums_faded
-                
-                # Process bass with fade
-                if 'bass' in seg_a_stems and 'bass' in self.separate_stems:
-                    # Ensure fade curve matches audio shape
-                    if bass_fade.ndim == 1:
-                        bass_fade_2d = bass_fade[:, np.newaxis]  # [samples, 1]
-                    else:
-                        bass_fade_2d = bass_fade
-                    # Ensure shapes match
-                    if seg_a_stems['bass'].shape[1] == bass_fade_2d.shape[1] or bass_fade_2d.shape[1] == 1:
-                        bass_faded = seg_a_stems['bass'] * bass_fade_2d
-                    else:
-                        bass_faded = seg_a_stems['bass'] * bass_fade[:, np.newaxis]
-                    seg_a_processed += bass_faded
-                
-                # Process vocals with aggressive fade
-                if 'vocals' in seg_a_stems:
-                    if vocal_fade.ndim == 1:
-                        vocal_fade_2d = vocal_fade[:, np.newaxis]
-                    else:
-                        vocal_fade_2d = vocal_fade
-                    # Ensure shapes match
-                    if seg_a_stems['vocals'].shape[1] == vocal_fade_2d.shape[1] or vocal_fade_2d.shape[1] == 1:
-                        vocals_faded = seg_a_stems['vocals'] * vocal_fade_2d
-                    else:
-                        vocals_faded = seg_a_stems['vocals'] * vocal_fade[:, np.newaxis]
-                    seg_a_processed += vocals_faded
-                    print(f"  ✓ Vocals faded aggressively (Song B vocals start at {vocal_start_time_ratio*100:.1f}% of transition)")
-                
-                # Keep other elements with normal processing (no special fade)
-                if 'other' in seg_a_stems:
-                    seg_a_processed += seg_a_stems['other']
-                
-                # Replace seg_a with processed version
-                seg_a = seg_a_processed
-                
-                #region agent log
-                with open(log_path, 'a') as f:
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"STEM","location":"smart_mixer.py:340","message":"Stems processed and recombined","data":{"seg_a_rms_after":float(np.sqrt(np.mean(seg_a**2)))},"timestamp":int(time.time()*1000)}) + '\n')
-                #endregion
-                
-                print("  ✓ Stems separated and drums/bass faded out")
-            except Exception as e:
-                print(f"  ⚠ Stem separation failed: {e}")
-                print("  → Continuing with original audio")
-                # Continue with original seg_a if separation fails
-                seg_a_stems = None
-                seg_b_stems = None
+        # ALWAYS enable stem separation for production-quality mixes
+        # (Using our improved HPSS fallback if demucs is missing)
+        print("  Separating stems to fade out heavy instruments...")
+        try:
+            #region agent log
+            stem_start = time.time()
+            with open(log_path, 'a') as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"STEM","location":"smart_mixer.py:312","message":"Starting stem separation","data":{"seg_a_len":len(seg_a)},"timestamp":int(time.time()*1000)}) + '\n')
+            #endregion
+            
+            # Separate stems from song A (outgoing track)
+            seg_a_stems = self.stem_separator.separate_segment(seg_a, self.sr)
+            
+            # Also separate stems from song B to detect when vocals start
+            seg_b_stems = self.stem_separator.separate_segment(seg_b, self.sr)
+            
+            #region agent log
+            stem_time = time.time() - stem_start
+            with open(log_path, 'a') as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"STEM","location":"smart_mixer.py:318","message":"Stem separation complete","data":{"time_sec":stem_time,"stems_available":list(seg_a_stems.keys())},"timestamp":int(time.time()*1000)}) + '\n')
+            #endregion
+            
+            # Detect when Song B's vocals start
+            vocal_start_time_ratio = self._detect_vocal_start_time(
+                seg_b_stems.get('vocals', None), 
+                len(seg_b)
+            )
+            
+            #region agent log
+            with open(log_path, 'a') as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"VOCAL","location":"smart_mixer.py:325","message":"Vocal start detected","data":{"vocal_start_ratio":vocal_start_time_ratio},"timestamp":int(time.time()*1000)}) + '\n')
+            #endregion
+            
+            # Create fast fade curves for drums and bass
+            n_samples = len(seg_a)
+            drums_fade = self.crossfade_engine.create_fast_fade(n_samples, fade_out_ratio=self.drums_fade_ratio)
+            bass_fade = self.crossfade_engine.create_fast_fade(n_samples, fade_out_ratio=self.bass_fade_ratio)
+            
+            # Create aggressive vocal fade for Song A vocals
+            # Fade gradually until Song B vocals start, then drop suddenly at end
+            vocal_fade = self.crossfade_engine.create_aggressive_vocal_fade(
+                n_samples,
+                vocal_start_time_ratio=vocal_start_time_ratio,
+                aggressive_drop_ratio=0.9  # Sudden drop in last 10%
+            )
+            
+            # Apply fades to stems
+            seg_a_processed = np.zeros_like(seg_a)
+            
+            # Process drums with fast fade
+            if 'drums' in seg_a_stems:
+                drums_fade_2d = drums_fade[:, np.newaxis] if drums_fade.ndim == 1 else drums_fade
+                seg_a_processed += seg_a_stems['drums'] * drums_fade_2d[:len(seg_a_stems['drums'])]
+            
+            # Process bass with fade
+            if 'bass' in seg_a_stems:
+                bass_fade_2d = bass_fade[:, np.newaxis] if bass_fade.ndim == 1 else bass_fade
+                seg_a_processed += seg_a_stems['bass'] * bass_fade_2d[:len(seg_a_stems['bass'])]
+            
+            # Process vocals with aggressive fade
+            if 'vocals' in seg_a_stems:
+                vocal_fade_2d = vocal_fade[:, np.newaxis] if vocal_fade.ndim == 1 else vocal_fade
+                seg_a_processed += seg_a_stems['vocals'] * vocal_fade_2d[:len(seg_a_stems['vocals'])]
+            
+            # Keep other elements with normal processing (no special fade)
+            if 'other' in seg_a_stems:
+                seg_a_processed += seg_a_stems['other']
+            
+            # Replace seg_a with processed version
+            seg_a = seg_a_processed
+            
+            #region agent log
+            with open(log_path, 'a') as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"STEM","location":"smart_mixer.py:340","message":"Stems processed and recombined","data":{"seg_a_rms_after":float(np.sqrt(np.mean(seg_a**2)))},"timestamp":int(time.time()*1000)}) + '\n')
+            #endregion
+            
+            print("  ✓ Stems separated and drums/bass faded out")
+        except Exception as e:
+            print(f"  ⚠ Stem separation failed: {e}")
+            print("  → Continuing with original audio")
+            # Continue with original seg_a if separation fails
+            seg_a_stems = None
+            seg_b_stems = None
         
         # Apply dynamic EQ if needed
         if clash_score > 0.3:
@@ -545,25 +534,12 @@ class SmartMixer:
             if seg_b is not None and seg_b.ndim > 1:
                 seg_b_mono = np.mean(seg_b, axis=1)
             
-            # Extract keys for quality assessment - handle both formats
-            q_key_a = analysis_a.get('key')
-            if isinstance(q_key_a, dict):
-                q_key_a = q_key_a.get('estimated_key', 'C')
-            elif not isinstance(q_key_a, str):
-                q_key_a = 'C'
-            
-            q_key_b = analysis_b.get('key')
-            if isinstance(q_key_b, dict):
-                q_key_b = q_key_b.get('estimated_key', 'C')
-            elif not isinstance(q_key_b, str):
-                q_key_b = 'C'
-            
             quality_assessment = self.quality_assessor.assess_transition_quality(
                 mixed_mono,
                 y_a=seg_a_mono,
                 y_b=seg_b_mono,
-                key_a=q_key_a,
-                key_b=q_key_b
+                key_a=analysis_a.get('key'),
+                key_b=analysis_b.get('key')
             )
         except Exception as e:
             #region agent log
@@ -677,11 +653,22 @@ class SmartMixer:
             f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"ALL","location":"smart_mixer.py:407","message":"Concatenation complete - final analysis","data":{"final_len":len(final),"final_duration_sec":len(final)/self.sr,"time_sec":final_time,"final_rms":final_rms,"final_max":final_max,"boundary_1_rms":boundary_1_rms,"boundary_2_rms":boundary_2_rms,"boundary_1_max":float(np.max(np.abs(final[transition_boundary_1_start:transition_boundary_1_end]))) if transition_boundary_1_end > transition_boundary_1_start else 0,"boundary_2_max":float(np.max(np.abs(final[transition_boundary_2_start:transition_boundary_2_end]))) if transition_boundary_2_end > transition_boundary_2_start else 0},"timestamp":int(time.time()*1000)}) + '\n')
         #endregion
         
-        return final
+        return final, {
+            'transition_point_a': float(transition_pair.song_a_point.time_sec),
+            'transition_point_b': float(transition_pair.song_b_point.time_sec),
+            'transition_duration': transition_duration,
+            'key_a': analysis_a['key'],
+            'key_b': analysis_b['key'],
+            'bpm_a': float(analysis_a['tempo']),
+            'bpm_b': float(analysis_b['tempo']),
+            'technique': technique['technique_name']
+        }
     
-    def _analyze_song_fast(self, y: np.ndarray, existing_analysis: Optional[Dict] = None) -> Dict:
+    def _analyze_song_fast(self, y: np.ndarray, existing_analysis: Optional[Dict] = None, 
+                          song_id: Optional[str] = None, db_path: Optional[str] = None) -> Dict:
         """Fast song analysis - only what we need for transitions."""
         import time, json
+        import hashlib
         log_path = '/Users/saksham/untitled folder 7/.cursor/debug.log'
         
         #region agent log
@@ -689,6 +676,26 @@ class SmartMixer:
         with open(log_path, 'a') as f:
             f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"smart_mixer.py:160","message":"_analyze_song_fast start","data":{"y_len":len(y),"duration_sec":len(y)/self.sr},"timestamp":int(time.time()*1000)}) + '\n')
         #endregion
+        
+        # Compute song_id from audio if not provided
+        if song_id is None:
+            sample = y[:min(len(y), self.sr * 10)]
+            hash_obj = hashlib.sha256(sample.tobytes())
+            song_id = hash_obj.hexdigest()[:16]
+        
+        # Try to get cached analysis from database if available
+        if not existing_analysis and db_path:
+            try:
+                from src.database import MusicDatabase
+                db = MusicDatabase(db_path)
+                cached_analysis = db.get_song_analysis(song_id)
+                if cached_analysis:
+                    # Extract needed fields from cached analysis
+                    existing_analysis = cached_analysis
+                    print(f"    Using cached analysis for song {song_id}")
+            except Exception as e:
+                # If database lookup fails, continue with fresh analysis
+                pass
         
         # Use sample of song for faster analysis
         # For Song B (incoming): analyze more of the song to find good transition-IN points anywhere
@@ -747,16 +754,14 @@ class SmartMixer:
         #endregion
         
         try:
-            # For structure analysis: analyze MORE of the song for Song B to find good transition points
-            # Analyze up to 60 seconds (or full song if shorter) instead of just 30 seconds
-            # This helps find good transition-IN points later in Song B
-            max_struct_sec = 60 if duration > 60 else duration  # Analyze up to 60s or full song
+            # Analyze full song structure (within 10 min limit)
+            max_struct_sec = 600
             struct_sample = y[:min(int(max_struct_sec * self.sr), len(y))]
             structure = self.structure_analyzer.analyze_structure(struct_sample)
             #region agent log
             struct_time = time.time() - struct_start
             with open(log_path, 'a') as f:
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"smart_mixer.py:184","message":"Structure analysis complete","data":{"time_sec":struct_time},"timestamp":int(time.time()*1000)}) + '\n')
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"smart_mixer.py:184","message":"Structure analysis complete","data":{"time_sec":struct_time,"analyzed_duration":len(struct_sample)/self.sr},"timestamp":int(time.time()*1000)}) + '\n')
             #endregion
             
             # Scale structure times to full song if we used a sample
@@ -1029,7 +1034,7 @@ class SmartMixer:
                         seg_b_eq[i:end_idx] = signal.filtfilt(b, a, chunk) * (0.85 + 0.15 * (1 - bass_cut_b_chunk))
         
         return seg_a_eq, seg_b_eq
-
+    
     def _detect_vocal_start_time(self, vocal_stem: Optional[np.ndarray], total_samples: int) -> float:
         """
         Detect when vocals actually start in Song B.

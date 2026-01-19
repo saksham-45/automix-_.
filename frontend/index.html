@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI DJ Mixer - Real-Time Continuous Mixing</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 2rem;
+            font-size: 2.5rem;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .section {
+            margin-bottom: 2rem;
+        }
+
+        .section h2 {
+            margin-bottom: 1rem;
+            font-size: 1.5rem;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+            padding-bottom: 0.5rem;
+        }
+
+        .input-group {
+            margin-bottom: 1rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        input[type="text"], input[type="number"] {
+            width: 100%;
+            padding: 0.75rem;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+            font-size: 1rem;
+            backdrop-filter: blur(10px);
+        }
+
+        input[type="text"]::placeholder {
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .radio-group {
+            display: flex;
+            gap: 1rem;
+            margin-top: 0.5rem;
+        }
+
+        .radio-option {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            padding: 0.5rem 1rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+
+        .radio-option:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .radio-option input[type="radio"] {
+            cursor: pointer;
+        }
+
+        .radio-option input[type="radio"]:checked + label {
+            font-weight: 700;
+        }
+
+        button {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: #fff;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            width: 100%;
+            margin-top: 1rem;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            border-left: 4px solid #4ade80;
+        }
+
+        .status.error {
+            border-left-color: #f87171;
+        }
+
+        .status.info {
+            border-left-color: #60a5fa;
+        }
+
+        .player-controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            justify-content: center;
+            margin-top: 1rem;
+        }
+
+        .player-controls button {
+            width: auto;
+            min-width: 100px;
+        }
+
+        .playlist-info {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+        }
+
+        .playlist-info h3 {
+            margin-bottom: 0.5rem;
+        }
+
+        .playlist-info p {
+            margin: 0.25rem 0;
+            opacity: 0.9;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        audio {
+            width: 100%;
+            margin-top: 1rem;
+        }
+
+        .current-song {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 1rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+        }
+
+        .current-song h3 {
+            margin-bottom: 0.5rem;
+            color: #fbbf24;
+        }
+
+        .current-song p {
+            margin: 0.25rem 0;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎵 AI DJ Mixer</h1>
+        
+        <div class="section">
+            <h2>Upload Playlist</h2>
+            <div class="input-group">
+                <label for="playlist-url">YouTube Playlist URL</label>
+                <input 
+                    type="text" 
+                    id="playlist-url" 
+                    placeholder="https://youtube.com/playlist?list=..."
+                    value=""
+                >
+            </div>
+            <button id="upload-btn" onclick="uploadPlaylist()">Upload Playlist</button>
+            <div id="upload-status" class="status hidden"></div>
+            <div id="playlist-info" class="playlist-info hidden"></div>
+        </div>
+
+        <div class="section hidden" id="mix-section">
+            <h2>Start Mix</h2>
+            <div class="input-group">
+                <label>Mix Mode</label>
+                <div class="radio-group">
+                    <div class="radio-option">
+                        <input type="radio" name="mode" value="sequential" id="mode-sequential" checked>
+                        <label for="mode-sequential">Sequential (Playlist Order)</label>
+                    </div>
+                    <div class="radio-option">
+                        <input type="radio" name="mode" value="shuffle" id="mode-shuffle">
+                        <label for="mode-shuffle">Shuffle (AI Selection)</label>
+                    </div>
+                </div>
+            </div>
+            <div class="input-group">
+                <label for="segment-duration">Segment Duration (seconds)</label>
+                <input type="number" id="segment-duration" value="60" min="30" max="120">
+            </div>
+            <div class="input-group">
+                <label for="transition-duration">Transition Duration (seconds)</label>
+                <input type="number" id="transition-duration" value="16.0" min="8" max="32" step="0.5">
+            </div>
+            <button id="start-btn" onclick="startMix()">Start Mix</button>
+            <div id="mix-status" class="status hidden"></div>
+        </div>
+
+        <div class="section hidden" id="player-section">
+            <h2>Player</h2>
+            <div id="current-song" class="current-song hidden">
+                <h3>Now Playing</h3>
+                <p id="current-song-name">-</p>
+                <p id="next-song-name">Next: -</p>
+            </div>
+            <div class="player-controls">
+                <button id="play-btn" onclick="togglePlay()">Play</button>
+                <button id="stop-btn" onclick="stopMix()">Stop</button>
+            </div>
+            <audio id="audio-player" controls></audio>
+            <div id="player-status" class="status hidden"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5001/api';
+        
+        let playlistId = null;
+        let mixId = null;
+        let audioContext = null;
+        let audioSource = null;
+        let isPlaying = false;
+        let currentChunkIndex = 0;
+
+        async function uploadPlaylist() {
+            const url = document.getElementById('playlist-url').value.trim();
+            
+            if (!url) {
+                showStatus('upload-status', 'Please enter a playlist URL', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('upload-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span> Uploading...';
+
+            try {
+                const response = await fetch(`${API_BASE}/playlist/upload`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ playlist_url: url, analyze: false })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to upload playlist');
+                }
+
+                playlistId = data.playlist_id;
+                
+                showStatus('upload-status', `✓ Playlist uploaded: ${data.total_songs} songs`, 'info');
+                document.getElementById('playlist-info').classList.remove('hidden');
+                document.getElementById('playlist-info').innerHTML = `
+                    <h3>Playlist Ready</h3>
+                    <p>Total Songs: ${data.total_songs}</p>
+                    <p>Playlist ID: ${playlistId}</p>
+                `;
+                document.getElementById('mix-section').classList.remove('hidden');
+
+            } catch (error) {
+                showStatus('upload-status', `✗ ${error.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = 'Upload Playlist';
+            }
+        }
+
+        async function startMix() {
+            if (!playlistId) {
+                showStatus('mix-status', 'Please upload a playlist first', 'error');
+                return;
+            }
+
+            const mode = document.querySelector('input[name="mode"]:checked').value;
+            const segmentDuration = parseInt(document.getElementById('segment-duration').value);
+            const transitionDuration = parseFloat(document.getElementById('transition-duration').value);
+
+            const btn = document.getElementById('start-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span> Starting...';
+
+            try {
+                const response = await fetch(`${API_BASE}/mix/start`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        playlist_id: playlistId,
+                        mode: mode,
+                        segment_duration: segmentDuration,
+                        transition_duration: transitionDuration
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to start mix');
+                }
+
+                mixId = data.mix_id;
+                
+                showStatus('mix-status', `✓ Mix started: ${data.mode} mode`, 'info');
+                document.getElementById('player-section').classList.remove('hidden');
+                
+                // Initialize audio player
+                initAudioPlayer();
+
+            } catch (error) {
+                showStatus('mix-status', `✗ ${error.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = 'Start Mix';
+            }
+        }
+
+        function initAudioPlayer() {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            updateStatus();
+        }
+
+        async function togglePlay() {
+            if (!mixId) return;
+
+            if (isPlaying) {
+                // Pause
+                if (audioSource) {
+                    audioSource.stop();
+                    audioSource = null;
+                }
+                isPlaying = false;
+                document.getElementById('play-btn').textContent = 'Play';
+            } else {
+                // Play
+                await playChunk(currentChunkIndex);
+                isPlaying = true;
+                document.getElementById('play-btn').textContent = 'Pause';
+            }
+        }
+
+        async function playChunk(chunkIndex) {
+            if (!mixId) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/stream/${mixId}/audio?chunk=${chunkIndex}`);
+                
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        // Chunk not ready yet, wait and retry
+                        console.log(`Chunk ${chunkIndex} not ready yet, waiting...`);
+                        setTimeout(() => {
+                            if (isPlaying) {
+                                playChunk(chunkIndex); // Retry same chunk
+                            }
+                        }, 2000); // Wait 2 seconds
+                        return;
+                    }
+                    throw new Error('Failed to fetch audio chunk');
+                }
+
+                const arrayBuffer = await response.arrayBuffer();
+                
+                if (arrayBuffer.byteLength === 0) {
+                    // Check if more chunks available
+                    const statusResp = await fetch(`${API_BASE}/mix/${mixId}`);
+                    const status = await statusResp.json();
+                    
+                    if (chunkIndex >= (status.total_chunks || 0)) {
+                        // End of stream
+                        console.log('End of playlist reached');
+                        stopMix();
+                        return;
+                    } else {
+                        // Chunk not ready yet, wait and retry
+                        setTimeout(() => {
+                            if (isPlaying) {
+                                playChunk(chunkIndex); // Retry same chunk
+                            }
+                        }, 2000);
+                        return;
+                    }
+                }
+
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                
+                audioSource = audioContext.createBufferSource();
+                audioSource.buffer = audioBuffer;
+                audioSource.connect(audioContext.destination);
+                
+                audioSource.onended = () => {
+                    // Play next chunk
+                    currentChunkIndex++;
+                    if (isPlaying) {
+                        playChunk(currentChunkIndex);
+                    }
+                };
+                
+                audioSource.start();
+                
+                // Update status
+                updateStatus();
+
+            } catch (error) {
+                console.error('Error playing chunk:', error);
+                // Don't stop on decode errors, just retry after delay
+                if (error.name === 'EncodingError' || error.message.includes('decode')) {
+                    setTimeout(() => {
+                        if (isPlaying) {
+                            playChunk(chunkIndex); // Retry
+                        }
+                    }, 1000);
+                } else {
+                    showStatus('player-status', `✗ ${error.message}`, 'error');
+                }
+            }
+        }
+
+        async function updateStatus() {
+            if (!mixId) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/mix/${mixId}`);
+                const status = await response.json();
+
+                if (status.current_song) {
+                    document.getElementById('current-song').classList.remove('hidden');
+                    document.getElementById('current-song-name').textContent = status.current_song;
+                    document.getElementById('next-song-name').textContent = `Next: ${status.next_song || '-'}`;
+                }
+                
+                // Update progress
+                if (status.total_chunks && status.chunks_ready) {
+                    const progress = (status.chunks_ready / status.total_chunks * 100).toFixed(1);
+                    const progressText = `${status.chunks_ready}/${status.total_chunks} chunks ready (${progress}%)`;
+                    document.getElementById('mix-status').textContent = progressText;
+                }
+
+            } catch (error) {
+                console.error('Error updating status:', error);
+            }
+        }
+
+        async function stopMix() {
+            if (!mixId) return;
+
+            try {
+                await fetch(`${API_BASE}/mix/${mixId}`, { method: 'DELETE' });
+                
+                if (audioSource) {
+                    audioSource.stop();
+                    audioSource = null;
+                }
+                
+                isPlaying = false;
+                currentChunkIndex = 0;
+                
+                document.getElementById('play-btn').textContent = 'Play';
+                document.getElementById('player-section').classList.add('hidden');
+                showStatus('mix-status', 'Mix stopped', 'info');
+
+            } catch (error) {
+                console.error('Error stopping mix:', error);
+            }
+        }
+
+        function showStatus(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.className = `status ${type}`;
+            element.classList.remove('hidden');
+        }
+
+        // Update status every 5 seconds when playing
+        setInterval(() => {
+            if (isPlaying && mixId) {
+                updateStatus();
+            }
+        }, 5000);
+    </script>
+</body>
+</html>

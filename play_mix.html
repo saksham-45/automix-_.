@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Play Mix - Real-Time</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+        button {
+            padding: 15px 30px;
+            font-size: 18px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px;
+        }
+        button:hover { background: #45a049; }
+        button:disabled { background: #666; cursor: not-allowed; }
+        .status {
+            padding: 15px;
+            background: #333;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .progress {
+            width: 100%;
+            height: 20px;
+            background: #444;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-bar {
+            height: 100%;
+            background: #4CAF50;
+            transition: width 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎵 Real-Time Mix Player</h1>
+    
+    <div class="status">
+        <strong>Mix ID:</strong> <span id="mix-id">26eb2541</span><br>
+        <strong>Status:</strong> <span id="status">Ready</span>
+    </div>
+    
+    <div>
+        <button id="play-btn" onclick="togglePlay()">▶️ Play</button>
+        <button id="stop-btn" onclick="stopPlay()">⏹️ Stop</button>
+    </div>
+    
+    <div class="progress">
+        <div class="progress-bar" id="progress-bar" style="width: 0%"></div>
+    </div>
+    
+    <div class="status">
+        <strong>Current:</strong> <span id="current-song">-</span><br>
+        <strong>Next:</strong> <span id="next-song">-</span><br>
+        <strong>Chunk:</strong> <span id="current-chunk">0</span>
+    </div>
+    
+    <audio id="audio-player" preload="auto"></audio>
+    
+    <script>
+        const MIX_ID = '26eb2541';
+        const API_BASE = 'http://127.0.0.1:5001/api';
+        let currentChunk = 0;
+        let isPlaying = false;
+        let audioPlayer = document.getElementById('audio-player');
+        
+        function updateProgress() {
+            fetch(`${API_BASE}/mix/${MIX_ID}`)
+                .then(r => r.json())
+                .then(status => {
+                    document.getElementById('status').textContent = status.processing_status || 'Ready';
+                    document.getElementById('current-song').textContent = status.current_song || '-';
+                    document.getElementById('next-song').textContent = status.next_song || '-';
+                    
+                    const total = status.total_chunks || 43;
+                    const ready = status.chunks_ready || 0;
+                    const pct = (ready / total * 100);
+                    document.getElementById('progress-bar').style.width = pct + '%';
+                })
+                .catch(e => console.error('Status error:', e));
+        }
+        
+        function playChunk(chunkIndex) {
+            if (!isPlaying) return;
+            
+            const url = `${API_BASE}/stream/${MIX_ID}/audio?chunk=${chunkIndex}`;
+            console.log(`Playing chunk ${chunkIndex}: ${url}`);
+            
+            document.getElementById('current-chunk').textContent = chunkIndex;
+            
+            audioPlayer.src = url;
+            audioPlayer.load();
+            
+            audioPlayer.oncanplay = () => {
+                audioPlayer.play().catch(e => {
+                    console.error('Play error:', e);
+                    setTimeout(() => playChunk(chunkIndex), 2000);
+                });
+            };
+            
+            audioPlayer.onended = () => {
+                if (isPlaying) {
+                    currentChunk++;
+                    playChunk(currentChunk);
+                }
+            };
+            
+            audioPlayer.onerror = (e) => {
+                console.error('Audio error:', e);
+                if (audioPlayer.error && audioPlayer.error.code === 4) {
+                    // MEDIA_ERR_SRC_NOT_SUPPORTED or not ready
+                    setTimeout(() => playChunk(chunkIndex), 2000);
+                }
+            };
+        }
+        
+        function togglePlay() {
+            if (isPlaying) {
+                audioPlayer.pause();
+                isPlaying = false;
+                document.getElementById('play-btn').textContent = '▶️ Play';
+            } else {
+                isPlaying = true;
+                document.getElementById('play-btn').textContent = '⏸️ Pause';
+                playChunk(currentChunk);
+            }
+        }
+        
+        function stopPlay() {
+            isPlaying = false;
+            audioPlayer.pause();
+            currentChunk = 0;
+            document.getElementById('play-btn').textContent = '▶️ Play';
+            document.getElementById('current-chunk').textContent = '0';
+        }
+        
+        // Update progress every 3 seconds
+        setInterval(updateProgress, 3000);
+        updateProgress();
+    </script>
+</body>
+</html>

@@ -166,17 +166,33 @@ class MusicDatabase:
             analysis.get('metadata', {}).get('sample_rate'),
             datetime.now().isoformat(),
             analysis_json_path,
-            tempo.get('bpm'),
-            harmony.get('key', {}).get('estimated_key'),
-            harmony.get('key', {}).get('camelot'),
-            energy.get('energy_statistics', {}).get('mean'),
-            vocals.get('has_vocals', False),
-            analysis.get('embeddings', {}).get('semantic_tags', {}).get('genre', [None])[0] if isinstance(analysis.get('embeddings', {}).get('semantic_tags', {}).get('genre'), list) else analysis.get('embeddings', {}).get('semantic_tags', {}).get('genre'),
+            tempo.get('bpm') if isinstance(tempo, dict) else (tempo if isinstance(tempo, (int, float)) else None),
+            harmony.get('key', {}).get('estimated_key') if isinstance(harmony.get('key'), dict) else (harmony.get('key') if isinstance(harmony.get('key'), str) else None),
+            harmony.get('key', {}).get('camelot') if isinstance(harmony.get('key'), dict) else None,
+            energy.get('energy_statistics', {}).get('mean') if isinstance(energy, dict) else None,
+            vocals.get('has_vocals', False) if isinstance(vocals, dict) else False,
+            self._extract_genre(analysis),
             embedding_vector
         ))
         
         conn.commit()
         conn.close()
+    
+    def _extract_genre(self, analysis: Dict[str, Any]) -> Optional[str]:
+        """Extract genre from analysis, handling empty lists safely."""
+        embeddings = analysis.get('embeddings', {})
+        semantic_tags = embeddings.get('semantic_tags', {})
+        genre = semantic_tags.get('genre')
+        
+        if isinstance(genre, list):
+            # If it's a list, return first element if non-empty, else None
+            return genre[0] if len(genre) > 0 else None
+        elif isinstance(genre, str):
+            # If it's already a string, return it
+            return genre
+        else:
+            # None or other types
+            return None
     
     def save_transition(self, transition_id: str, transition_data: Dict[str, Any],
                        transition_json_path: Optional[str] = None):
