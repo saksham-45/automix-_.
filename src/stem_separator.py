@@ -8,6 +8,7 @@ import numpy as np
 import torch
 from typing import Dict, Optional, Tuple
 import warnings
+from src.utils import get_best_device, get_device_name
 warnings.filterwarnings('ignore')
 
 
@@ -23,10 +24,10 @@ class StemSeparator:
         
         Args:
             model_name: demucs model to use ('htdemucs', 'htdemucs_ft', 'mdx_extra')
-            device: Device to use ('cuda', 'cpu', or None for auto)
+            device: Device to use ('mps', 'cuda', 'cpu', or None for auto)
         """
         self.model_name = model_name
-        self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = get_best_device(device)
         self.model = None
         self._model_loaded = False
         
@@ -41,7 +42,8 @@ class StemSeparator:
             self.get_model = get_model
             self.apply_model = apply_model
             self._model_loaded = True
-            print(f"  ✓ Stem separation model ready ({self.model_name})")
+            device_name = get_device_name(self.device)
+            print(f"  ✓ Stem separation model ready ({self.model_name}) on {device_name}")
         except ImportError:
             raise ImportError(
                 "demucs not installed. Install with: pip install demucs"

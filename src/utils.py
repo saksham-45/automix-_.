@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import Dict, Any, Optional
 import numpy as np
+import torch
 
 
 def compute_song_id(audio_path: str) -> str:
@@ -120,4 +121,46 @@ def expand_curve(compressed_data: Dict[str, list]) -> np.ndarray:
     )
     
     return expanded
+
+
+def get_best_device(device: Optional[str] = None) -> str:
+    """
+    Get the best available PyTorch device.
+    
+    Priority: MPS (Apple Silicon GPU) > CUDA (NVIDIA GPU) > CPU
+    
+    Args:
+        device: Optional device string ('mps', 'cuda', 'cpu', or None for auto)
+        
+    Returns:
+        Device string ('mps', 'cuda', or 'cpu')
+    """
+    if device is not None:
+        return device
+    
+    # Auto-detect best available device
+    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        return 'mps'
+    elif torch.cuda.is_available():
+        return 'cuda'
+    else:
+        return 'cpu'
+
+
+def get_device_name(device: str) -> str:
+    """
+    Get a human-readable name for a device.
+    
+    Args:
+        device: Device string ('mps', 'cuda', 'cpu')
+        
+    Returns:
+        Human-readable device name
+    """
+    device_names = {
+        'mps': 'Metal (GPU)',
+        'cuda': 'CUDA (GPU)',
+        'cpu': 'CPU'
+    }
+    return device_names.get(device, device)
 
