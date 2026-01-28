@@ -161,11 +161,42 @@ def main():
         print("\n" + "="*60)
         print("CREATING MIX")
         print("="*60)
-        print("\nNow running create_mix.py...\n")
-        
-        # Run create_mix.py
-        import create_mix
-        # The create_mix.py will use temp_audio/song_a.wav and temp_audio/song_b.wav
+        # Use same superhuman path as mix_runner / server (existing SmartMixer)
+        import soundfile as sf
+        from src.smart_mixer import SmartMixer
+        from datetime import datetime
+        mixer = SmartMixer()
+        mixed_audio = mixer.create_superhuman_mix(
+            str(song_a_path),
+            str(song_b_path),
+            transition_duration=16.0,
+            creativity_level=0.6,
+            optimize_quality=True,
+        )
+        base_name = 'ai_dj_mix'
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_file = f'{base_name}_{timestamp}.wav'
+        sf.write(output_file, mixed_audio, mixer.sr)
+        print(f"\nSaving mix to: {output_file}")
+        print(f"Duration: {len(mixed_audio) / mixer.sr:.1f}s")
+        # Move old mixes to data/old_mixes (same as create_mix.py)
+        try:
+            cwd = Path(__file__).resolve().parent
+            old_mixes_dir = cwd / 'data' / 'old_mixes'
+            old_mixes_dir.mkdir(parents=True, exist_ok=True)
+            mix_files = sorted(
+                [f for f in cwd.iterdir() if f.name.startswith(base_name) and f.suffix == '.wav'],
+                key=lambda x: x.stat().st_mtime,
+                reverse=True,
+            )
+            for old_file in mix_files[1:]:
+                try:
+                    old_file.rename(old_mixes_dir / old_file.name)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        print(f"\n✅ Mix complete: {output_file}")
         
     except KeyboardInterrupt:
         print("\n\n⚠ Cancelled by user")

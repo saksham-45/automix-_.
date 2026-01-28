@@ -38,20 +38,19 @@ def run_youtube_mix(url1: str, url2: str, output_path: Path, duration: int = 60)
         from src.smart_mixer import SmartMixer
 
         mixer = SmartMixer()
-        ai_data = None
-        try:
-            with open(PROJECT_ROOT / "youtube_transition.json") as f:
-                trans = json.load(f)
-                if "curves" in trans:
-                    ai_data = trans
-        except Exception:
-            pass
-
-        mixed_audio = mixer.create_smooth_mix(
+        
+        # Use SUPERHUMAN mixing with all advanced features:
+        # - Micro-timing perfection (groove/transient alignment)
+        # - Spectral intelligence (frequency slot negotiation)  
+        # - Hybrid techniques (creative blending)
+        # - Stem orchestration (musical conversations)
+        # - Monte Carlo optimization (quality simulation)
+        mixed_audio = mixer.create_superhuman_mix(
             str(song_a),
             str(song_b),
             transition_duration=16.0,
-            ai_transition_data=ai_data,
+            creativity_level=0.6,
+            optimize_quality=True,
         )
         sf.write(str(output_path), mixed_audio, mixer.sr)
     finally:
