@@ -259,8 +259,9 @@ class TechniqueExecutor:
                 cutoff_hz = filter_end_hz - (filter_end_hz - filter_start_hz) * progress
                 cutoff = max(cutoff_hz / nyq, 0.01)
             
-            # Apply filter
-            b, a = signal.butter(2, cutoff, btype=filter_type)
+            # Apply filter (scipy expects 'highpass'/'lowpass', not 'high_pass'/'low_pass')
+            btype = 'highpass' if filter_type == 'high_pass' else 'lowpass'
+            b, a = signal.butter(2, cutoff, btype=btype)
             
             for ch in range(seg_a_filtered.shape[1]):
                 chunk = seg_a_filtered[i:end_idx, ch]

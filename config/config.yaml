@@ -39,7 +39,7 @@ analysis:
     use_source_separation: true
     separation_model: "htdemucs"  # Options: "htdemucs", "mdx_extra"
     
-  # Stem separation for smooth transitions
+  # Stem separation for smooth transitions (requires demucs)
   stem_separation:
     enabled: true
     model: "htdemucs"

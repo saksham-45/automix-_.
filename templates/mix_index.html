@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoMix </title>
+  <style>
+    :root {
+      --bg: #0d0d0f;
+      --surface: #16161a;
+      --border: #2a2a2e;
+      --text: #e4e4e7;
+      --muted: #71717a;
+      --accent: #a78bfa;
+      --accent-hover: #c4b5fd;
+      --error: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    .sub {
+      color: var(--muted);
+      font-size: 0.95rem;
+      margin-bottom: 2rem;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem 1.75rem;
+      width: 100%;
+      max-width: 480px;
+    }
+    label {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+    input[type="url"] {
+      width: 100%;
+      padding: 0.65rem 0.75rem;
+      font-size: 0.95rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      margin-bottom: 1rem;
+    }
+    input[type="url"]::placeholder { color: var(--muted); }
+    input[type="url"]:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    button {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      font-size: 1rem;
+      font-weight: 500;
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-top: 0.25rem;
+    }
+    button:hover { background: var(--accent-hover); }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    #status {
+      margin-top: 1.25rem;
+      font-size: 0.9rem;
+      min-height: 1.5em;
+    }
+    #status.mixing { color: var(--accent); }
+    #status.error { color: var(--error); }
+    #player-wrap {
+      margin-top: 1.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+    }
+    #player-wrap audio {
+      width: 100%;
+      height: 48px;
+    }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <h1>AutoMix</h1>
+  <p class="sub"></p>
+
+  <div class="card">
+    <form id="form">
+      <label for="url1">Song A (outgoing) – YouTube URL</label>
+      <input type="url" id="url1" name="url1" placeholder="https://youtu.be/..." required>
+
+      <label for="url2">Song B (incoming) – YouTube URL</label>
+      <input type="url" id="url2" name="url2" placeholder="https://youtu.be/..." required>
+
+      <button type="submit" id="submitBtn">Create mix</button>
+    </form>
+
+    <div id="status" class="hidden" aria-live="polite"></div>
+    <div id="player-wrap" class="hidden">
+      <p style="font-size: 0.85rem; color: var(--muted); margin-bottom: 0.5rem;">Your mix</p>
+      <audio id="audio" controls preload="auto"></audio>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('form');
+    const submitBtn = document.getElementById('submitBtn');
+    const statusEl = document.getElementById('status');
+    const playerWrap = document.getElementById('player-wrap');
+    const audio = document.getElementById('audio');
+
+    function setStatus(msg, className) {
+      statusEl.textContent = msg;
+      statusEl.className = className || '';
+      statusEl.classList.remove('hidden');
+    }
+
+    function hideStatus() {
+      statusEl.classList.add('hidden');
+      statusEl.textContent = '';
+    }
+
+    function showPlayer(url) {
+      playerWrap.classList.remove('hidden');
+      audio.src = url;
+      audio.load();
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const url1 = form.url1.value.trim();
+      const url2 = form.url2.value.trim();
+      if (!url1 || !url2) return;
+
+      submitBtn.disabled = true;
+      hideStatus();
+      playerWrap.classList.add('hidden');
+      audio.removeAttribute('src');
+
+      try {
+        const r = await fetch('/mix', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ url1, url2 })
+        });
+        const data = await r.json();
+        if (!r.ok) {
+          setStatus(data.error || 'Request failed', 'error');
+          submitBtn.disabled = false;
+          return;
+        }
+
+        const jobId = data.job_id;
+        setStatus('Mixing… (this can take 1–2 minutes)', 'mixing');
+
+        const poll = setInterval(async () => {
+          try {
+            const sr = await fetch('/mix/status/' + jobId);
+            const st = await sr.json();
+            if (st.status === 'done') {
+              clearInterval(poll);
+              setStatus('Done.', '');
+              showPlayer('/mix/output/' + jobId);
+              submitBtn.disabled = false;
+            } else if (st.status === 'error') {
+              clearInterval(poll);
+              setStatus('Error: ' + (st.error || 'Unknown'), 'error');
+              submitBtn.disabled = false;
+            }
+          } catch (err) {
+            clearInterval(poll);
+            setStatus('Error: ' + err.message, 'error');
+            submitBtn.disabled = false;
+          }
+        }, 2500);
+      } catch (err) {
+        setStatus('Error: ' + err.message, 'error');
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

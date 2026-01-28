@@ -4,7 +4,10 @@
 
 ```bash
 pip install -r requirements.txt
+pip install --no-deps 'git+https://github.com/adefossez/demucs.git'
 ```
+
+The second command installs **demucs** from the [adefossez/demucs](https://github.com/adefossez/demucs) fork (avoids lameenc on Python 3.14; stem separation uses WAV only).
 
 **Note**: If you don't have `requirements.txt`, install these packages:
 ```bash
