@@ -398,12 +398,12 @@ class SmartMixer:
                 drums_fade = self.crossfade_engine.create_fast_fade(n_samples, fade_out_ratio=self.drums_fade_ratio)
                 bass_fade = self.crossfade_engine.create_fast_fade(n_samples, fade_out_ratio=self.bass_fade_ratio)
                 
-                # Create aggressive vocal fade for Song A vocals
-                # Fade gradually until Song B vocals start, then drop suddenly at end
-                vocal_fade = self.crossfade_engine.create_aggressive_vocal_fade(
+                # Moderate vocal fade: complete by when Song B vocals start, ~25% fade duration (gentler than aggressive)
+                fade_complete_by = max(0.25, vocal_start_time_ratio)
+                vocal_fade = self.crossfade_engine.create_moderate_vocal_fade(
                     n_samples,
-                    vocal_start_time_ratio=vocal_start_time_ratio,
-                    aggressive_drop_ratio=0.9  # Sudden drop in last 10%
+                    fade_complete_by_ratio=fade_complete_by,
+                    fade_duration_ratio=0.25
                 )
                 
                 # Apply fades to stems
@@ -437,7 +437,7 @@ class SmartMixer:
                         bass_faded = seg_a_stems['bass'] * bass_fade[:, np.newaxis]
                     seg_a_processed += bass_faded
                 
-                # Process vocals with aggressive fade
+                # Process vocals with moderate fade (phrase-friendly, not sudden)
                 if 'vocals' in seg_a_stems:
                     if vocal_fade.ndim == 1:
                         vocal_fade_2d = vocal_fade[:, np.newaxis]
@@ -449,7 +449,7 @@ class SmartMixer:
                     else:
                         vocals_faded = seg_a_stems['vocals'] * vocal_fade[:, np.newaxis]
                     seg_a_processed += vocals_faded
-                    print(f"  ✓ Vocals faded aggressively (Song B vocals start at {vocal_start_time_ratio*100:.1f}% of transition)")
+                    print(f"  ✓ Vocals faded moderately (Song B vocals start at {vocal_start_time_ratio*100:.1f}% of transition)")
                 
                 # Keep other elements with normal processing (no special fade)
                 if 'other' in seg_a_stems:

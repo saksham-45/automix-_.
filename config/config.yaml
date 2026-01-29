@@ -46,6 +46,11 @@ analysis:
     separate_stems: ["drums", "bass"]  # Which stems to separate and fade
     drums_fade_ratio: 0.25  # Fade out drums in first 25% of transition
     bass_fade_ratio: 0.5    # Fade out bass in first 50% of transition
+  
+  # Phrase-aware, gentler stem fades (superhuman / stem orchestration)
+  stem_fades:
+    vocal_fade_duration_sec: 2.5   # Fade duration for vocal/other (phrase-aligned)
+    fade_curve: "moderate"         # "moderate" (cosine) or "smooth"
     
   # Transition analysis settings
   transition_analysis:

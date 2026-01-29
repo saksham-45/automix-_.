@@ -274,19 +274,27 @@ class SuperhumanDJEngine:
             # Analyze stems for orchestration
             stem_analysis = self.stem_orchestrator.analyze_stems_for_orchestration(stems_a, stems_b)
             
-            # Create stem conversation
+            # Detect vocal phrases for phrase-aware fade timing (before creating conversation)
+            phrase_data_a = None
+            phrase_data_b = None
+            if 'vocals' in stems_a:
+                phrase_data_a = self.stem_orchestrator.detect_vocal_phrases(stems_a['vocals'])
+                analysis['vocal_phrases_a'] = {
+                    'phrase_count': phrase_data_a.get('phrase_count', 0),
+                    'safe_points': phrase_data_a.get('safe_transition_points', [])[:5]
+                }
+            if 'vocals' in stems_b:
+                phrase_data_b = self.stem_orchestrator.detect_vocal_phrases(stems_b['vocals'])
+            segment_duration_sec = len(seg_a) / self.sr
+            
+            # Create stem conversation with phrase data for phrase-aware, gentler fades
             recommended_conv = stem_analysis.get('recommended_conversation', 'layered_reveal')
             conversation = self.stem_orchestrator.create_stem_conversation(
-                stems_a, stems_b, recommended_conv
+                stems_a, stems_b, recommended_conv,
+                phrase_data_a=phrase_data_a,
+                phrase_data_b=phrase_data_b,
+                segment_duration_sec=segment_duration_sec
             )
-            
-            # Detect vocal phrases for safe transition points
-            if 'vocals' in stems_a:
-                vocal_phrases = self.stem_orchestrator.detect_vocal_phrases(stems_a['vocals'])
-                analysis['vocal_phrases_a'] = {
-                    'phrase_count': vocal_phrases.get('phrase_count', 0),
-                    'safe_points': vocal_phrases.get('safe_transition_points', [])[:5]
-                }
             
             analysis['stem_orchestration'] = {
                 'conversation_type': recommended_conv,

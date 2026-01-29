@@ -478,19 +478,25 @@ class TechniqueExecutor:
         # Different transition times for different stems
         drums_transition_ratio = 0.2
         bass_transition_ratio = 0.4
-        vocals_transition_ratio = 0.6
-        other_transition_ratio = 0.5
+        # Vocals/other: longer fade window (35%) and moderate (cosine) curve for gentler transition
+        vocals_transition_ratio = 0.35
+        other_transition_ratio = 0.40
         
-        def create_stem_fade(start_ratio, n_samples):
-            return crossfade_engine.create_multi_stage_curve(n_samples, [
+        def create_stem_fade(start_ratio: float, n_samp: int, use_moderate: bool = False):
+            if use_moderate:
+                return crossfade_engine.create_multi_stage_curve(n_samp, [
+                    {'start': 0.0, 'end': start_ratio, 'fade_type': 'hold', 'value': 1.0},
+                    {'start': start_ratio, 'end': 1.0, 'fade_type': 'moderate', 'end_value': 0.0}
+                ])
+            return crossfade_engine.create_multi_stage_curve(n_samp, [
                 {'start': 0.0, 'end': start_ratio, 'fade_type': 'hold', 'value': 1.0},
                 {'start': start_ratio, 'end': 1.0, 'fade_type': 'smooth', 'end_value': 0.0}
             ])
         
-        drums_fade_a = create_stem_fade(drums_transition_ratio, n_samples)
-        bass_fade_a = create_stem_fade(bass_transition_ratio, n_samples)
-        vocals_fade_a = create_stem_fade(vocals_transition_ratio, n_samples)
-        other_fade_a = create_stem_fade(other_transition_ratio, n_samples)
+        drums_fade_a = create_stem_fade(drums_transition_ratio, n_samples, use_moderate=False)
+        bass_fade_a = create_stem_fade(bass_transition_ratio, n_samples, use_moderate=False)
+        vocals_fade_a = create_stem_fade(vocals_transition_ratio, n_samples, use_moderate=True)
+        other_fade_a = create_stem_fade(other_transition_ratio, n_samples, use_moderate=True)
         
         # Incoming fades (inverse)
         drums_fade_b = 1 - drums_fade_a

@@ -187,6 +187,75 @@ class CrossfadeEngine:
         
         return np.clip(fade_curve, 0.0, 1.0)
     
+    def create_moderate_vocal_fade(self,
+                                   n_samples: int,
+                                   fade_complete_by_ratio: float = 0.85,
+                                   fade_duration_ratio: float = 0.25) -> np.ndarray:
+        """
+        Create moderately steep vocal fade (outgoing). No sudden drop; fade completes
+        by fade_complete_by_ratio using a cosine curve over fade_duration_ratio.
+        
+        Args:
+            n_samples: Total number of samples
+            fade_complete_by_ratio: Ratio (0-1) by which fade must reach 0
+            fade_duration_ratio: Ratio of segment used for the fade (e.g. 0.25 = 25%)
+        
+        Returns:
+            Fade curve array (starts at 1.0, reaches 0 by fade_complete_by_ratio)
+        """
+        fade_complete_sample = int(n_samples * fade_complete_by_ratio)
+        fade_complete_sample = max(1, min(fade_complete_sample, n_samples))
+        fade_duration_samples = int(n_samples * fade_duration_ratio)
+        fade_duration_samples = max(1, min(fade_duration_samples, fade_complete_sample))
+        fade_start_sample = max(0, fade_complete_sample - fade_duration_samples)
+        
+        fade_curve = np.ones(n_samples)
+        fade_curve[fade_complete_sample:] = 0.0
+        if fade_start_sample < fade_complete_sample:
+            n_fade = fade_complete_sample - fade_start_sample
+            t = np.linspace(0, 1, n_fade)
+            # Moderately steep: cosine (0.5 * (1 + cos(pi*t))) goes 1 -> 0
+            fade_curve[fade_start_sample:fade_complete_sample] = 0.5 * (1 + np.cos(np.pi * t))
+        
+        from scipy.ndimage import gaussian_filter1d
+        fade_curve = gaussian_filter1d(fade_curve, sigma=max(5, n_samples / 400))
+        return np.clip(fade_curve, 0.0, 1.0)
+    
+    def create_gentler_fade_in(self,
+                               n_samples: int,
+                               fade_start_ratio: float = 0.0,
+                               fade_duration_ratio: float = 0.30) -> np.ndarray:
+        """
+        Create gentler fade-in (incoming). Rises with cosine over fade_duration_ratio
+        so the rise is "a little less fast" than linear.
+        
+        Args:
+            n_samples: Total number of samples
+            fade_start_ratio: Ratio (0-1) at which fade-in starts
+            fade_duration_ratio: Ratio of segment used for the rise (e.g. 0.30 = 30%)
+        
+        Returns:
+            Fade curve array (0 until fade_start, then cosine rise to 1.0)
+        """
+        fade_start_sample = int(n_samples * fade_start_ratio)
+        fade_start_sample = max(0, min(fade_start_sample, n_samples - 1))
+        fade_duration_samples = int(n_samples * fade_duration_ratio)
+        fade_end_sample = min(n_samples, fade_start_sample + fade_duration_samples)
+        fade_end_sample = max(fade_start_sample + 1, fade_end_sample)
+        
+        fade_curve = np.zeros(n_samples)
+        fade_curve[:fade_start_sample] = 0.0
+        fade_curve[fade_end_sample:] = 1.0
+        if fade_end_sample > fade_start_sample:
+            n_fade = fade_end_sample - fade_start_sample
+            t = np.linspace(0, 1, n_fade)
+            # Cosine rise: 0.5 * (1 - cos(pi*t)) goes 0 -> 1
+            fade_curve[fade_start_sample:fade_end_sample] = 0.5 * (1 - np.cos(np.pi * t))
+        
+        from scipy.ndimage import gaussian_filter1d
+        fade_curve = gaussian_filter1d(fade_curve, sigma=max(5, n_samples / 400))
+        return np.clip(fade_curve, 0.0, 1.0)
+    
     def create_multi_stage_curve(self, 
                                  n_samples: int,
                                  stages: List[Dict]) -> np.ndarray:
@@ -245,6 +314,14 @@ class CrossfadeEngine:
                 t = np.linspace(0, 1, stage_samples)
                 # Aggressive cubic drop
                 curve[start_idx:end_idx] = start_value * (1 - t) ** 3 + end_value * (1 - (1 - t) ** 3)
+            
+            elif fade_type == 'moderate':
+                end_value = stage.get('end_value', 0.0)
+                start_value = curve[start_idx - 1] if start_idx > 0 else 1.0
+                t = np.linspace(0, 1, stage_samples)
+                # Cosine: w = 0.5*(1+cos(pi*t)) goes 1->0 so curve = w*start + (1-w)*end
+                w = 0.5 * (1 + np.cos(np.pi * t))
+                curve[start_idx:end_idx] = w * start_value + (1 - w) * end_value
         
         # Smooth the entire curve
         from scipy.ndimage import gaussian_filter1d

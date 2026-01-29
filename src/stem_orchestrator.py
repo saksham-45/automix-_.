@@ -64,7 +64,10 @@ class StemOrchestrator:
     def create_stem_conversation(self,
                                  stems_a: Dict[str, np.ndarray],
                                  stems_b: Dict[str, np.ndarray],
-                                 conversation_type: str = 'call_response') -> Dict:
+                                 conversation_type: str = 'call_response',
+                                 phrase_data_a: Optional[Dict] = None,
+                                 phrase_data_b: Optional[Dict] = None,
+                                 segment_duration_sec: Optional[float] = None) -> Dict:
         """
         Create a musical conversation between stems of two songs.
         
@@ -78,22 +81,77 @@ class StemOrchestrator:
             stems_a: Dict with keys 'drums', 'bass', 'vocals', 'other'
             stems_b: Dict with keys 'drums', 'bass', 'vocals', 'other'
             conversation_type: Type of conversation to create
+            phrase_data_a: Optional dict with safe_transition_points (sec from segment start)
+            phrase_data_b: Optional dict with safe_transition_points for Song B
+            segment_duration_sec: Duration of segment in seconds (n_samples / sr)
         
         Returns:
             Conversation specification with timing and volume curves
         """
         available_stems = set(stems_a.keys()) & set(stems_b.keys())
+        phrase_ctx = {
+            'phrase_data_a': phrase_data_a,
+            'phrase_data_b': phrase_data_b,
+            'segment_duration_sec': segment_duration_sec,
+        }
         
         if conversation_type == 'call_response':
             return self._create_call_response(stems_a, stems_b, available_stems)
         elif conversation_type == 'interweave':
-            return self._create_interweave(stems_a, stems_b, available_stems)
+            return self._create_interweave(stems_a, stems_b, available_stems, phrase_ctx)
         elif conversation_type == 'layered_reveal':
-            return self._create_layered_reveal(stems_a, stems_b, available_stems)
+            return self._create_layered_reveal(stems_a, stems_b, available_stems, phrase_ctx)
         elif conversation_type == 'counter_melody':
-            return self._create_counter_melody(stems_a, stems_b, available_stems)
+            return self._create_counter_melody(stems_a, stems_b, available_stems, phrase_ctx)
         else:
-            return self._create_layered_reveal(stems_a, stems_b, available_stems)
+            return self._create_layered_reveal(stems_a, stems_b, available_stems, phrase_ctx)
+    
+    def _get_phrase_fade_timing(self,
+                                phrase_ctx: Dict,
+                                n_samples: int,
+                                stem_kind: str) -> Tuple[Optional[int], Optional[int]]:
+        """
+        Get phrase-aware fade timing for vocals/other.
+        Returns (fade_complete_by_sample for curve_a, fade_in_start_sample for curve_b)
+        or (None, None) to use fallback ratios.
+        """
+        if stem_kind not in ('vocals', 'other'):
+            return None, None
+        seg_sec = phrase_ctx.get('segment_duration_sec')
+        if seg_sec is None or seg_sec <= 0:
+            return None, None
+        min_fade_sec = 2.0
+        fade_duration_sec = 2.5
+        
+        # Outgoing: first safe point that allows at least min_fade_sec for the fade
+        phrase_a = phrase_ctx.get('phrase_data_a')
+        fade_complete_by_sample = None
+        if phrase_a:
+            safe = phrase_a.get('safe_transition_points') or []
+            for sec in safe:
+                if 0 <= sec <= seg_sec and sec >= min_fade_sec:
+                    fade_complete_by_sample = int(sec * self.sr)
+                    fade_complete_by_sample = min(fade_complete_by_sample, n_samples)
+                    break
+            if fade_complete_by_sample is None and safe:
+                # Use last safe point before end
+                in_seg = [s for s in safe if 0 <= s <= seg_sec]
+                if in_seg:
+                    sec = max(in_seg) if max(in_seg) >= min_fade_sec else in_seg[0]
+                    fade_complete_by_sample = min(n_samples, int(sec * self.sr))
+        
+        # Incoming: first safe point as fade-in start
+        phrase_b = phrase_ctx.get('phrase_data_b')
+        fade_in_start_sample = None
+        if phrase_b:
+            safe = phrase_b.get('safe_transition_points') or []
+            for sec in safe:
+                if 0 <= sec < seg_sec:
+                    fade_in_start_sample = int(sec * self.sr)
+                    fade_in_start_sample = min(fade_in_start_sample, n_samples - 1)
+                    break
+        
+        return fade_complete_by_sample, fade_in_start_sample
     
     def _create_call_response(self, 
                               stems_a: Dict, 
@@ -154,12 +212,14 @@ class StemOrchestrator:
     def _create_interweave(self,
                            stems_a: Dict,
                            stems_b: Dict,
-                           available_stems: set) -> Dict:
+                           available_stems: set,
+                           phrase_ctx: Optional[Dict] = None) -> Dict:
         """
         Create interweave pattern:
         - Different stems fade at different times
         - Creates complex texture
         """
+        phrase_ctx = phrase_ctx or {}
         ref_stem = list(stems_a.values())[0]
         n_samples = len(ref_stem)
         
@@ -177,27 +237,29 @@ class StemOrchestrator:
                 ratio = 0.5
             
             transition_point = int(n_samples * ratio)
-            transition_length = int(n_samples * 0.2)  # 20% of transition
+            transition_length = int(n_samples * 0.25)  # Slightly longer for gentler
             
             curve_a = np.ones(n_samples)
             curve_b = np.zeros(n_samples)
             
-            # Create crossfade at transition point
             start = max(0, transition_point - transition_length // 2)
             end = min(n_samples, transition_point + transition_length // 2)
+            n_fade = end - start
+            if n_fade > 0:
+                t = np.linspace(0, 1, n_fade)
+                if stem in ['vocals', 'other']:
+                    # Moderate cosine curves
+                    fade_out = 0.5 * (1 + np.cos(np.pi * t))
+                    fade_in = 0.5 * (1 - np.cos(np.pi * t))
+                else:
+                    fade_out = np.sqrt(1 - t)
+                    fade_in = np.sqrt(t)
+                curve_a[start:end] = fade_out
+                curve_a[end:] = 0.0
+                curve_b[:start] = 0.0
+                curve_b[start:end] = fade_in
+                curve_b[end:] = 1.0
             
-            t = np.linspace(0, 1, end - start)
-            fade_out = np.sqrt(1 - t)  # Equal power
-            fade_in = np.sqrt(t)
-            
-            curve_a[start:end] = fade_out
-            curve_a[end:] = 0.0
-            
-            curve_b[:start] = 0.0
-            curve_b[start:end] = fade_in
-            curve_b[end:] = 1.0
-            
-            # Smooth
             curve_a = gaussian_filter1d(curve_a, sigma=1000)
             curve_b = gaussian_filter1d(curve_b, sigma=1000)
             
@@ -215,18 +277,23 @@ class StemOrchestrator:
     def _create_layered_reveal(self,
                                stems_a: Dict,
                                stems_b: Dict,
-                               available_stems: set) -> Dict:
+                               available_stems: set,
+                               phrase_ctx: Optional[Dict] = None) -> Dict:
         """
         Create layered reveal pattern:
         - Gradually introduce Song B stems one by one
         - Professional DJ technique
         """
+        phrase_ctx = phrase_ctx or {}
         ref_stem = list(stems_a.values())[0]
         n_samples = len(ref_stem)
+        seg_sec = phrase_ctx.get('segment_duration_sec') or (n_samples / self.sr)
+        phrase_ctx = {**phrase_ctx, 'segment_duration_sec': seg_sec}
         
-        # Reveal order: drums first (groove), then bass, other, finally vocals
         reveal_order = ['drums', 'bass', 'other', 'vocals']
-        reveal_points = [0.10, 0.30, 0.50, 0.70]  # When each stem starts
+        reveal_points = [0.10, 0.30, 0.50, 0.70]
+        fade_duration_sec = 2.5
+        fade_duration_samples = min(n_samples, int(fade_duration_sec * self.sr))
         
         curves = {}
         
@@ -237,36 +304,56 @@ class StemOrchestrator:
             else:
                 start_ratio = 0.5
             
-            start_sample = int(n_samples * start_ratio)
-            fade_length = int(n_samples * 0.25)
+            fade_complete_by, fade_in_start = self._get_phrase_fade_timing(phrase_ctx, n_samples, stem)
             
-            curve_a = np.ones(n_samples)
-            curve_b = np.zeros(n_samples)
+            if stem in ['vocals', 'other'] and (fade_complete_by is not None or fade_in_start is not None):
+                # Phrase-aware timing and moderate (cosine) curves
+                curve_a = np.ones(n_samples)
+                curve_b = np.zeros(n_samples)
+                # Outgoing: complete fade by phrase break
+                end_sample = int(n_samples * 0.85) if fade_complete_by is None else fade_complete_by
+                end_sample = max(1, min(end_sample, n_samples))
+                start_sample = max(0, end_sample - fade_duration_samples)
+                if end_sample > start_sample:
+                    n_fade = end_sample - start_sample
+                    t = np.linspace(0, 1, n_fade)
+                    curve_a[start_sample:end_sample] = 0.5 * (1 + np.cos(np.pi * t))
+                curve_a[end_sample:] = 0.0
+                # Incoming: gentler fade-in from phrase break
+                b_start = int(n_samples * start_ratio) if fade_in_start is None else fade_in_start
+                b_start = max(0, min(b_start, n_samples - 1))
+                b_end = min(n_samples, b_start + fade_duration_samples)
+                if b_end > b_start:
+                    n_fade = b_end - b_start
+                    t = np.linspace(0, 1, n_fade)
+                    curve_b[b_start:b_end] = 0.5 * (1 - np.cos(np.pi * t))
+                curve_b[b_end:] = 1.0
+            else:
+                start_sample = int(n_samples * start_ratio)
+                fade_length = int(n_samples * 0.25)
+                curve_a = np.ones(n_samples)
+                curve_b = np.zeros(n_samples)
+                a_fade_start = int(n_samples * (start_ratio + 0.1))
+                a_fade_end = min(n_samples, a_fade_start + fade_length)
+                if a_fade_end > a_fade_start:
+                    t = np.linspace(0, 1, a_fade_end - a_fade_start)
+                    if stem in ['vocals', 'other']:
+                        curve_a[a_fade_start:a_fade_end] = 0.5 * (1 + np.cos(np.pi * t))
+                    else:
+                        curve_a[a_fade_start:a_fade_end] = np.sqrt(1 - t)
+                    curve_a[a_fade_end:] = 0.0
+                b_fade_end = min(start_sample + fade_length, n_samples)
+                if b_fade_end > start_sample:
+                    t = np.linspace(0, 1, b_fade_end - start_sample)
+                    if stem in ['vocals', 'other']:
+                        curve_b[start_sample:b_fade_end] = 0.5 * (1 - np.cos(np.pi * t))
+                    else:
+                        curve_b[start_sample:b_fade_end] = np.sqrt(t)
+                    curve_b[b_fade_end:] = 1.0
             
-            # Song A stems fade out based on reveal timing
-            a_fade_start = int(n_samples * (start_ratio + 0.1))
-            a_fade_end = min(n_samples, a_fade_start + fade_length)
-            
-            if a_fade_end > a_fade_start:
-                t = np.linspace(0, 1, a_fade_end - a_fade_start)
-                curve_a[a_fade_start:a_fade_end] = np.sqrt(1 - t)
-                curve_a[a_fade_end:] = 0.0
-            
-            # Song B stems fade in
-            b_fade_end = min(start_sample + fade_length, n_samples)
-            if b_fade_end > start_sample:
-                t = np.linspace(0, 1, b_fade_end - start_sample)
-                curve_b[start_sample:b_fade_end] = np.sqrt(t)
-                curve_b[b_fade_end:] = 1.0
-            
-            # Smooth
             curve_a = gaussian_filter1d(curve_a, sigma=500)
             curve_b = gaussian_filter1d(curve_b, sigma=500)
-            
-            curves[stem] = {
-                'a': curve_a.tolist(),
-                'b': curve_b.tolist()
-            }
+            curves[stem] = {'a': curve_a.tolist(), 'b': curve_b.tolist()}
         
         return {
             'type': 'layered_reveal',
@@ -277,14 +364,20 @@ class StemOrchestrator:
     def _create_counter_melody(self,
                                stems_a: Dict,
                                stems_b: Dict,
-                               available_stems: set) -> Dict:
+                               available_stems: set,
+                               phrase_ctx: Optional[Dict] = None) -> Dict:
         """
         Create counter-melody effect:
         - Song A melody/vocals over Song B rhythm section
         - Creates unique hybrid
+        - Phrase-aware: vocal/other fade-out completes at phrase break, fade-in starts at break
         """
+        phrase_ctx = phrase_ctx or {}
         ref_stem = list(stems_a.values())[0]
         n_samples = len(ref_stem)
+        seg_sec = phrase_ctx.get('segment_duration_sec') or (n_samples / self.sr)
+        phrase_ctx = {**phrase_ctx, 'segment_duration_sec': seg_sec}
+        fade_duration_samples = min(n_samples, int(2.5 * self.sr))
         
         curves = {}
         
@@ -293,30 +386,40 @@ class StemOrchestrator:
             curve_b = np.zeros(n_samples)
             
             if stem in ['vocals', 'other']:
-                # Melodic stems: keep Song A longer, blend with Song B
-                # Counter-melody phase: 20% to 70%
+                fade_complete_by, fade_in_start = self._get_phrase_fade_timing(phrase_ctx, n_samples, stem)
                 counter_start = int(n_samples * 0.20)
-                counter_end = int(n_samples * 0.70)
+                counter_end_ratio = 0.70
+                counter_end = int(n_samples * counter_end_ratio)
                 
-                # Song A melodic stems stay full, then fade
-                curve_a[:counter_end] = 1.0
-                fade_len = n_samples - counter_end
-                if fade_len > 0:
-                    curve_a[counter_end:] = np.linspace(1.0, 0.0, fade_len)
+                if fade_complete_by is not None and fade_complete_by >= fade_duration_samples:
+                    end_sample = min(fade_complete_by, n_samples)
+                    start_sample = max(0, end_sample - fade_duration_samples)
+                else:
+                    end_sample = counter_end
+                    start_sample = max(0, end_sample - fade_duration_samples)
                 
-                # Song B melodic stems fade in at end
-                curve_b[:counter_start] = 0.0
-                if counter_end > counter_start:
-                    t = np.linspace(0, 0.3, counter_end - counter_start)
-                    curve_b[counter_start:counter_end] = t  # Quiet underneath
-                curve_b[counter_end:] = np.linspace(0.3, 1.0, n_samples - counter_end)
+                curve_a[:start_sample] = 1.0
+                if end_sample > start_sample:
+                    n_fade = end_sample - start_sample
+                    t = np.linspace(0, 1, n_fade)
+                    curve_a[start_sample:end_sample] = 0.5 * (1 + np.cos(np.pi * t))
+                curve_a[end_sample:] = 0.0
+                
+                b_start_ratio = counter_start / n_samples
+                b_start = int(n_samples * b_start_ratio) if fade_in_start is None else fade_in_start
+                b_start = max(0, min(b_start, n_samples - 1))
+                b_end = min(n_samples, b_start + fade_duration_samples)
+                curve_b[:b_start] = 0.0
+                if b_end > b_start:
+                    n_fade = b_end - b_start
+                    t = np.linspace(0, 1, n_fade)
+                    curve_b[b_start:b_end] = 0.5 * (1 - np.cos(np.pi * t))
+                curve_b[b_end:] = 1.0
                 
             elif stem in ['drums', 'bass']:
-                # Rhythmic stems: Song B takes over earlier
                 transition_ratio = 0.15 if stem == 'drums' else 0.25
                 transition_point = int(n_samples * transition_ratio)
-                fade_length = int(n_samples * 0.15)
-                
+                fade_length = int(n_samples * 0.20)
                 fade_end = min(transition_point + fade_length, n_samples)
                 
                 curve_a[:transition_point] = 1.0
@@ -327,17 +430,13 @@ class StemOrchestrator:
                 
                 curve_b[:transition_point] = 0.0
                 if fade_end > transition_point:
+                    t = np.linspace(0, 1, fade_end - transition_point)
                     curve_b[transition_point:fade_end] = t
                 curve_b[fade_end:] = 1.0
             
-            # Smooth
             curve_a = gaussian_filter1d(curve_a, sigma=500)
             curve_b = gaussian_filter1d(curve_b, sigma=500)
-            
-            curves[stem] = {
-                'a': curve_a.tolist(),
-                'b': curve_b.tolist()
-            }
+            curves[stem] = {'a': curve_a.tolist(), 'b': curve_b.tolist()}
         
         return {
             'type': 'counter_melody',
