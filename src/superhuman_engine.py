@@ -45,6 +45,7 @@ class SuperhumanDJEngine:
         self.montecarlo = MonteCarloQualityOptimizer(sr=sr)
         
         # Configuration
+        # NOTE: some of these can be overridden from config.yaml via SmartMixer.configure(...)
         self.config = {
             'enable_micro_timing': True,
             'enable_spectral_intelligence': True,
@@ -53,7 +54,13 @@ class SuperhumanDJEngine:
             'enable_montecarlo_optimization': True,
             'montecarlo_simulations': 30,
             'creativity_level': 0.6,  # 0.0 = conservative, 1.0 = experimental
-            'quality_threshold': 0.55
+            'quality_threshold': 0.55,
+            # Vocal/bed swap + tempo morph behaviour (can be tuned from config.yaml)
+            'vocal_bed_swap_enabled': True,
+            # Maximum fractional tempo shift during overlap (e.g. 0.06 ~= 6%)
+            'max_tempo_shift_pct': 0.06,
+            # 'never', 'rare', 'allowed'
+            'allow_simultaneous_vocals': 'rare',
         }
     
     def configure(self, **kwargs):
@@ -262,6 +269,7 @@ class SuperhumanDJEngine:
         stage_start = time.time()
         
         conversation = None
+        role_plan = None  # Will describe which bed/vocals/tempo target to use during overlap
         if self.config['enable_stem_orchestration'] and stems_a is not None and stems_b is not None:
             # Analyze stems for orchestration
             stem_analysis = self.stem_orchestrator.analyze_stems_for_orchestration(stems_a, stems_b)
@@ -284,11 +292,21 @@ class SuperhumanDJEngine:
                 'conversation_type': recommended_conv,
                 'reasoning': stem_analysis.get('reasoning')
             }
+            
+            # Decide which bed/vocals/tempo target to use during the overlap
+            role_plan = self._choose_vocal_bed_plan(
+                stems_a, stems_b,
+                tempo_a, tempo_b,
+                analysis,
+                stem_analysis
+            )
+            if role_plan is not None:
+                analysis['vocal_bed_plan'] = role_plan
         
         analysis['timings']['stem_orchestration'] = time.time() - stage_start
         analysis['stages'].append('stems_orchestrated')
         
-        # ==================== STAGE 5: APPLY SPECTRAL INTELLIGENCE ====================
+        # ==================== STAGE 5: APPLY SPECTRAL INTELLIGENCE & TEMPO MORPH ====================
         print("  🌈 Stage 5: Spectral Processing...")
         stage_start = time.time()
         
@@ -299,6 +317,45 @@ class SuperhumanDJEngine:
         analysis['spectral_applied'] = False
         analysis['spectral_morph_stages'] = 0
         print(f"    ✓ Using original segments (spectral info for reference)")
+        
+        # Optional: apply short, overlap-only tempo morphing based on role plan
+        tempo_morph_info = None
+        if role_plan is not None:
+            max_pct = float(self.config.get('max_tempo_shift_pct', 0.06))
+            target = role_plan.get('tempo_target', 'a')
+            # Decide which side(s) to morph
+            if target == 'b':
+                morph = self.micro_timing.create_limited_tempo_morph(
+                    tempo_a, tempo_b, len(seg_a_processed), max_shift_pct=max_pct
+                )
+                seg_a_processed = self.micro_timing.apply_tempo_morph(seg_a_processed, morph)
+                tempo_morph_info = {'source': 'a', 'target_tempo': 'b', **morph}
+            elif target == 'a':
+                morph = self.micro_timing.create_limited_tempo_morph(
+                    tempo_b, tempo_a, len(seg_b_processed), max_shift_pct=max_pct
+                )
+                seg_b_processed = self.micro_timing.apply_tempo_morph(seg_b_processed, morph)
+                tempo_morph_info = {'source': 'b', 'target_tempo': 'a', **morph}
+            elif target == 'mid':
+                # Converge both toward mid-tempo within limits
+                mid_tempo = 0.5 * (tempo_a + tempo_b)
+                morph_a = self.micro_timing.create_limited_tempo_morph(
+                    tempo_a, mid_tempo, len(seg_a_processed), max_shift_pct=max_pct
+                )
+                morph_b = self.micro_timing.create_limited_tempo_morph(
+                    tempo_b, mid_tempo, len(seg_b_processed), max_shift_pct=max_pct
+                )
+                seg_a_processed = self.micro_timing.apply_tempo_morph(seg_a_processed, morph_a)
+                seg_b_processed = self.micro_timing.apply_tempo_morph(seg_b_processed, morph_b)
+                tempo_morph_info = {
+                    'source': 'both',
+                    'target_tempo': 'mid',
+                    'morph_a': morph_a,
+                    'morph_b': morph_b
+                }
+        
+        if tempo_morph_info is not None:
+            analysis['tempo_morph'] = tempo_morph_info
         
         analysis['timings']['spectral_processing'] = time.time() - stage_start
         analysis['stages'].append('spectral_applied')
@@ -311,7 +368,7 @@ class SuperhumanDJEngine:
         if conversation is not None and stems_a is not None and stems_b is not None:
             # Orchestrated stem mix
             mixed = self.stem_orchestrator.orchestrate_mix(
-                stems_a, stems_b, conversation
+                stems_a, stems_b, conversation, role_plan=role_plan
             )
             analysis['mix_method'] = 'stem_orchestration'
         else:
@@ -486,3 +543,134 @@ class SuperhumanDJEngine:
                 'montecarlo': type(self.montecarlo).__name__
             }
         }
+
+    # ==================== VOCAL/BED ROLE PLANNING ====================
+    
+    def _choose_vocal_bed_plan(self,
+                               stems_a: Optional[Dict],
+                               stems_b: Optional[Dict],
+                               tempo_a: float,
+                               tempo_b: float,
+                               analysis: Dict,
+                               stem_analysis: Dict) -> Optional[Dict]:
+        """
+        Decide which song provides the instrumental bed and which provides vocals.
+        
+        Returns a small dict (TransitionRolePlan) with:
+            - bed_source: 'a' | 'b'
+            - vocal_source: 'a' | 'b'
+            - tempo_target: 'a' | 'b' | 'mid'
+            - max_tempo_shift_pct: float
+        """
+        if not self.config.get('vocal_bed_swap_enabled', True):
+            return None
+        
+        has_vocals_a = stems_a is not None and 'vocals' in stems_a
+        has_vocals_b = stems_b is not None and 'vocals' in stems_b
+        
+        # If we have no vocal stems, keep default behaviour.
+        if not has_vocals_a and not has_vocals_b:
+            return None
+        
+        # Basic spectral & tempo info
+        spectral = analysis.get('spectral', {})
+        clash = float(spectral.get('overall_conflict', 0.0) or 0.0)
+        tempo_diff = abs(float(tempo_a) - float(tempo_b))
+        max_pct = float(self.config.get('max_tempo_shift_pct', 0.06))
+        max_shift_bpm = max_pct * max(float(tempo_a), float(tempo_b))
+        
+        # Phrase data for B vocals (A is already partly analyzed upstream)
+        vocal_phrases_b = None
+        if has_vocals_b:
+            try:
+                vocal_phrases_b = self.stem_orchestrator.detect_vocal_phrases(
+                    stems_b['vocals']
+                )
+            except Exception:
+                vocal_phrases_b = None
+        
+        def candidate(bed_source: str, vocal_source: str) -> Dict:
+            return {
+                'bed_source': bed_source,
+                'vocal_source': vocal_source,
+                'tempo_target': None,  # filled later
+                'score': 0.0,
+            }
+        
+        candidates: List[Dict] = []
+        
+        # Classic: A bed + A vocals
+        if has_vocals_a:
+            candidates.append(candidate('a', 'a'))
+        # Song B vocals over Song A bed
+        if has_vocals_b:
+            candidates.append(candidate('a', 'b'))
+        # Song A vocals over Song B bed
+        if has_vocals_a:
+            candidates.append(candidate('b', 'a'))
+        # Classic B: B bed + B vocals
+        if has_vocals_b:
+            candidates.append(candidate('b', 'b'))
+        
+        # Score candidates
+        best = None
+        best_score = -1e9
+        
+        has_vocals_a_energy = stem_analysis['stems_a'].get('vocals', {}).get('has_content', False)
+        has_vocals_b_energy = stem_analysis['stems_b'].get('vocals', {}).get('has_content', False)
+        
+        for cand in candidates:
+            bsrc = cand['bed_source']
+            vsrc = cand['vocal_source']
+            score = 0.0
+            
+            # Prefer continuity: bed from outgoing song A gets a small bonus.
+            if bsrc == 'a':
+                score += 0.15
+            else:
+                score += 0.05
+            
+            # Slightly prefer using the incoming song's vocals when they exist.
+            if vsrc == 'b' and has_vocals_b_energy:
+                score += 0.25
+            if vsrc == 'a' and has_vocals_a_energy:
+                score += 0.15
+            
+            # Penalize high spectral clash when bed & vocals are from different songs.
+            if bsrc != vsrc:
+                score -= clash * 0.3
+            
+            # Tempo considerations: reward plans that keep required shift within limits.
+            if tempo_diff <= max_shift_bpm:
+                score += 0.2
+            else:
+                score -= 0.2
+            
+            # If we are considering B vocals, reward if we have many phrase-safe points.
+            if vsrc == 'b' and vocal_phrases_b is not None:
+                safe_points = vocal_phrases_b.get('safe_transition_points', [])
+                phrase_count = vocal_phrases_b.get('phrase_count', 0)
+                score += min(len(safe_points) * 0.02, 0.2)
+                score += min(phrase_count * 0.01, 0.1)
+            
+            cand['score'] = score
+            
+            if score > best_score:
+                best_score = score
+                best = cand
+        
+        if best is None:
+            return None
+        
+        # Decide tempo target: generally follow the vocal's home tempo,
+        # or fall back to outgoing bed.
+        if best['vocal_source'] == 'b' and has_vocals_b:
+            best['tempo_target'] = 'b'
+        elif best['vocal_source'] == 'a' and has_vocals_a:
+            best['tempo_target'] = 'a'
+        else:
+            # Fallback: align to outgoing tempo
+            best['tempo_target'] = 'a'
+        
+        best['max_tempo_shift_pct'] = max_pct
+        return best

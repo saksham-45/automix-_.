@@ -581,7 +581,8 @@ class StemOrchestrator:
                         stems_b: Dict[str, np.ndarray],
                         conversation: Dict,
                         apply_effects: bool = True,
-                        effect_params: Optional[Dict] = None) -> np.ndarray:
+                        effect_params: Optional[Dict] = None,
+                        role_plan: Optional[Dict] = None) -> np.ndarray:
         """
         Create the final mix from stem conversation specification.
         
@@ -652,6 +653,24 @@ class StemOrchestrator:
                                 stem_a[chunk_start:chunk_end],
                                 effect_type, eparams, progress
                             )
+            
+            # Apply vocal/bed role plan if provided
+            if role_plan is not None:
+                bed_src = role_plan.get('bed_source', 'a')
+                vocal_src = role_plan.get('vocal_source', 'a')
+                
+                if stem_name == 'vocals':
+                    # Only keep the chosen vocal source; mute the other.
+                    if vocal_src == 'a':
+                        curve_b = np.zeros_like(curve_b)
+                    elif vocal_src == 'b':
+                        curve_a = np.zeros_like(curve_a)
+                else:
+                    # Non-vocal stems: gently bias towards the chosen bed source
+                    if bed_src == 'a':
+                        curve_b *= 0.3
+                    elif bed_src == 'b':
+                        curve_a *= 0.3
             
             # Apply curves
             samples = min(len(stem_a), len(stem_b), n_samples)

@@ -134,6 +134,7 @@ class SmartMixer:
         try:
             from src.superhuman_engine import SuperhumanDJEngine
             self.superhuman_engine = SuperhumanDJEngine(sr=sr)
+            # Apply base defaults
             self.superhuman_engine.configure(
                 enable_micro_timing=True,
                 enable_spectral_intelligence=True,
@@ -142,6 +143,26 @@ class SmartMixer:
                 enable_montecarlo_optimization=True,
                 creativity_level=0.6
             )
+            # Apply config overrides if available
+            try:
+                if 'config' in locals():
+                    super_cfg = config.get('superhuman', {})
+                else:
+                    import yaml
+                    cfg_path = Path(__file__).parent.parent / 'config' / 'config.yaml'
+                    super_cfg = {}
+                    if cfg_path.exists():
+                        with open(cfg_path) as f:
+                            full_cfg = yaml.safe_load(f)
+                        super_cfg = full_cfg.get('superhuman', {}) or {}
+                if super_cfg:
+                    self.superhuman_engine.configure(
+                        vocal_bed_swap_enabled=super_cfg.get('vocal_bed_swap_enabled', True),
+                        max_tempo_shift_pct=super_cfg.get('max_tempo_shift_pct', 0.06),
+                        allow_simultaneous_vocals=super_cfg.get('allow_simultaneous_vocals', 'rare'),
+                    )
+            except Exception:
+                pass
         except Exception as e:
             print(f"  ⚠ Superhuman engine not available: {e}")
             self.superhuman_enabled = False

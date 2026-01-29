@@ -94,3 +94,8 @@ logging:
   level: "INFO"  # DEBUG, INFO, WARNING, ERROR
   file: "logs/analysis.log"
 
+superhuman:
+  vocal_bed_swap_enabled: true
+  max_tempo_shift_pct: 0.06
+  allow_simultaneous_vocals: "rare"
+

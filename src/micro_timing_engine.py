@@ -448,58 +448,118 @@ class MicroTimingEngine:
             'end_tempo': tempo_b
         }
     
+    def create_limited_tempo_morph(self,
+                                   tempo_current: float,
+                                   tempo_target: float,
+                                   transition_samples: int,
+                                   max_shift_pct: float,
+                                   morph_type: str = 'smooth') -> Dict:
+        """
+        Wrapper around create_tempo_morph that limits the effective tempo shift.
+        
+        Args:
+            tempo_current: Starting tempo (BPM) for this source.
+            tempo_target: Desired target tempo (BPM).
+            transition_samples: Length of transition in samples.
+            max_shift_pct: Maximum fractional tempo shift allowed (e.g. 0.06 == 6%).
+        """
+        if max_shift_pct <= 0:
+            return {
+                'stretch_curve': [1.0] * transition_samples,
+                'morph_needed': False,
+                'tempo_curve': [tempo_current] * transition_samples,
+                'morph_type': morph_type,
+                'start_tempo': tempo_current,
+                'end_tempo': tempo_current
+            }
+        
+        max_up = tempo_current * (1.0 + max_shift_pct)
+        max_down = tempo_current * (1.0 - max_shift_pct)
+        effective_target = max(min(tempo_target, max_up), max_down)
+        
+        if abs(effective_target - tempo_current) < 0.01:
+            return {
+                'stretch_curve': [1.0] * transition_samples,
+                'morph_needed': False,
+                'tempo_curve': [tempo_current] * transition_samples,
+                'morph_type': morph_type,
+                'start_tempo': tempo_current,
+                'end_tempo': tempo_current
+            }
+        
+        return self.create_tempo_morph(
+            tempo_current, effective_target, transition_samples, morph_type=morph_type
+        )
+    
     def apply_tempo_morph(self, 
                          y: np.ndarray, 
                          morph_data: Dict,
                          preserve_pitch: bool = True) -> np.ndarray:
         """
         Apply tempo morphing to audio segment.
-        
-        Uses phase vocoder for pitch preservation.
+        Handles mono and stereo; always returns same shape and length as input.
         """
         if not morph_data.get('morph_needed', False):
             return y
         
+        orig_len = len(y)
+        stereo = y.ndim == 2 and y.shape[1] >= 2
+        if stereo:
+            # Process each channel and recombine so _overlap_add stays 1D
+            channels = [self._apply_tempo_morph_mono(y[:, ch], morph_data) for ch in range(y.shape[1])]
+            out = np.column_stack(channels)
+        else:
+            y_mono = np.asarray(y).reshape(-1)
+            out = self._apply_tempo_morph_mono(y_mono, morph_data)
+        
+        # Enforce same length as input (time-stretch can change duration)
+        if len(out) != orig_len:
+            if stereo:
+                out_resampled = np.zeros((orig_len, out.shape[1]), dtype=out.dtype)
+                for ch in range(out.shape[1]):
+                    out_resampled[:, ch] = np.interp(
+                        np.linspace(0, len(out) - 1, orig_len),
+                        np.arange(len(out)),
+                        out[:, ch].astype(np.float64)
+                    ).astype(out.dtype)
+                out = out_resampled
+            else:
+                out = np.interp(
+                    np.linspace(0, len(out) - 1, orig_len),
+                    np.arange(len(out)),
+                    out.astype(np.float64)
+                ).astype(y.dtype if hasattr(y, 'dtype') else np.float32)
+        return out
+    
+    def _apply_tempo_morph_mono(self, y: np.ndarray, morph_data: Dict) -> np.ndarray:
+        """Apply tempo morph to a single channel (1D). May return different length."""
         stretch_curve = np.array(morph_data['stretch_curve'])
-        
-        # Apply stretch in overlapping windows for smooth transition
-        window_size = int(0.1 * self.sr)  # 100ms windows
+        window_size = int(0.1 * self.sr)
         hop = window_size // 2
-        
-        # For efficiency, use average stretch per chunk
         n_chunks = max(1, len(y) // hop)
         chunk_stretches = np.interp(
             np.linspace(0, len(stretch_curve) - 1, n_chunks),
             np.arange(len(stretch_curve)),
             stretch_curve
         )
-        
-        # Apply time stretching
         output_chunks = []
         for i, stretch in enumerate(chunk_stretches):
             start = i * hop
             end = min(start + window_size, len(y))
-            chunk = y[start:end]
-            
+            chunk = np.asarray(y[start:end]).flatten()
             if len(chunk) == 0:
                 continue
-            
             if abs(stretch - 1.0) > 0.001:
                 try:
                     stretched = librosa.effects.time_stretch(chunk, rate=stretch)
                     output_chunks.append(stretched)
-                except:
+                except Exception:
                     output_chunks.append(chunk)
             else:
                 output_chunks.append(chunk)
-        
         if len(output_chunks) == 0:
             return y
-        
-        # Overlap-add reconstruction
-        result = self._overlap_add(output_chunks, hop)
-        
-        return result
+        return self._overlap_add(output_chunks, hop)
     
     def _overlap_add(self, chunks: List[np.ndarray], hop: int) -> np.ndarray:
         """Reconstruct audio from overlapping chunks."""
