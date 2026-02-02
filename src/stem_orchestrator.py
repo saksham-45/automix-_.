@@ -103,6 +103,12 @@ class StemOrchestrator:
             return self._create_layered_reveal(stems_a, stems_b, available_stems, phrase_ctx)
         elif conversation_type == 'counter_melody':
             return self._create_counter_melody(stems_a, stems_b, available_stems, phrase_ctx)
+        elif conversation_type == 'vocal_overlay_handoff':
+            return self._create_vocal_overlay_handoff(stems_a, stems_b, available_stems, phrase_ctx)
+        elif conversation_type == 'bass_from_a_beat_from_b':
+            return self._create_bass_from_a_beat_from_b(stems_a, stems_b, available_stems, phrase_ctx)
+        elif conversation_type == 'melody_a_drums_vocals_b':
+            return self._create_melody_a_drums_vocals_b(stems_a, stems_b, available_stems, phrase_ctx)
         else:
             return self._create_layered_reveal(stems_a, stems_b, available_stems, phrase_ctx)
     
@@ -444,6 +450,190 @@ class StemOrchestrator:
             'description': 'Song A melody plays over Song B rhythm'
         }
     
+    def _create_vocal_overlay_handoff(self,
+                                      stems_a: Dict,
+                                      stems_b: Dict,
+                                      available_stems: set,
+                                      phrase_ctx: Optional[Dict] = None) -> Dict:
+        """
+        B vocals on A bed, then introduce B music (e.g. Hey Jude vocals over Yesterday's
+        guitars, then bring in Hey Jude's full track). Layer incoming vocals on outgoing
+        music, then hand off to incoming music for modulation-perfect feel.
+        """
+        phrase_ctx = phrase_ctx or {}
+        ref_stem = next((stems_a[s] for s in available_stems if len(stems_a[s]) > 0), None)
+        if ref_stem is None:
+            ref_stem = next((stems_b[s] for s in available_stems if len(stems_b[s]) > 0), None)
+        n_samples = len(ref_stem)
+        handoff_start_ratio = 0.40   # First 40%: B vocals + A bed only; then crossfade bed to B
+        handoff_fade_ratio = 0.35   # Fade over 35% of segment (smooth handoff)
+        fade_duration_samples = max(1, int(n_samples * handoff_fade_ratio))
+        handoff_start_sample = int(n_samples * handoff_start_ratio)
+        handoff_end_sample = min(n_samples, handoff_start_sample + fade_duration_samples)
+        
+        curves = {}
+        for stem in available_stems:
+            curve_a = np.ones(n_samples)
+            curve_b = np.zeros(n_samples)
+            
+            if stem == 'vocals':
+                # B vocals only (incoming song sings over A's bed)
+                curve_a[:] = 0.0
+                curve_b[:] = 1.0
+            else:
+                # Drums, bass, other: A full for first portion, then smooth crossfade to B
+                curve_a[:handoff_start_sample] = 1.0
+                curve_b[:handoff_start_sample] = 0.0
+                if handoff_end_sample > handoff_start_sample:
+                    n_fade = handoff_end_sample - handoff_start_sample
+                    t = np.linspace(0, 1, n_fade)
+                    # Equal-power style crossfade for bed handoff
+                    curve_a[handoff_start_sample:handoff_end_sample] = 0.5 * (1 + np.cos(np.pi * t))
+                    curve_b[handoff_start_sample:handoff_end_sample] = 0.5 * (1 - np.cos(np.pi * t))
+                curve_a[handoff_end_sample:] = 0.0
+                curve_b[handoff_end_sample:] = 1.0
+            
+            curve_a = gaussian_filter1d(np.clip(curve_a, 0, 1), sigma=300)
+            curve_b = gaussian_filter1d(np.clip(curve_b, 0, 1), sigma=300)
+            curves[stem] = {'a': curve_a.tolist(), 'b': curve_b.tolist()}
+        
+        return {
+            'type': 'vocal_overlay_handoff',
+            'curves': curves,
+            'description': 'B vocals on A bed, then introduce B music'
+        }
+    
+    def _create_bass_from_a_beat_from_b(self,
+                                        stems_a: Dict,
+                                        stems_b: Dict,
+                                        available_stems: set,
+                                        phrase_ctx: Optional[Dict] = None) -> Dict:
+        """
+        Keep Song A's bass and bring in Song B's beat (drums). A's bass stays;
+        B's drums replace A's drums; other/vocals crossfade A→B. Good for
+        "same bass line, new groove" (e.g. New Person → Let It Happen).
+        """
+        phrase_ctx = phrase_ctx or {}
+        ref_stem = next((stems_a[s] for s in available_stems if len(stems_a[s]) > 0), None)
+        if ref_stem is None:
+            ref_stem = next((stems_b[s] for s in available_stems if len(stems_b[s]) > 0), None)
+        n_samples = len(ref_stem)
+        # Beat (drums) and other/vocals: crossfade over second half
+        beat_handoff_start_ratio = 0.25   # B's beat starts coming in at 25%
+        beat_handoff_fade_ratio = 0.50    # Crossfade over 50% of segment
+        start_sample = int(n_samples * beat_handoff_start_ratio)
+        fade_samples = int(n_samples * beat_handoff_fade_ratio)
+        end_sample = min(n_samples, start_sample + fade_samples)
+        
+        curves = {}
+        for stem in available_stems:
+            curve_a = np.ones(n_samples)
+            curve_b = np.zeros(n_samples)
+            
+            if stem == 'bass':
+                # Keep Song A bass the whole time
+                curve_a[:] = 1.0
+                curve_b[:] = 0.0
+            elif stem == 'drums':
+                # Replace A's drums with B's beat: crossfade A→B
+                curve_a[:start_sample] = 1.0
+                curve_b[:start_sample] = 0.0
+                if end_sample > start_sample:
+                    n_fade = end_sample - start_sample
+                    t = np.linspace(0, 1, n_fade)
+                    curve_a[start_sample:end_sample] = 0.5 * (1 + np.cos(np.pi * t))
+                    curve_b[start_sample:end_sample] = 0.5 * (1 - np.cos(np.pi * t))
+                curve_a[end_sample:] = 0.0
+                curve_b[end_sample:] = 1.0
+            else:
+                # Other, vocals: smooth crossfade A→B over same window
+                curve_a[:start_sample] = 1.0
+                curve_b[:start_sample] = 0.0
+                if end_sample > start_sample:
+                    n_fade = end_sample - start_sample
+                    t = np.linspace(0, 1, n_fade)
+                    curve_a[start_sample:end_sample] = 0.5 * (1 + np.cos(np.pi * t))
+                    curve_b[start_sample:end_sample] = 0.5 * (1 - np.cos(np.pi * t))
+                curve_a[end_sample:] = 0.0
+                curve_b[end_sample:] = 1.0
+            
+            curve_a = gaussian_filter1d(np.clip(curve_a, 0, 1), sigma=300)
+            curve_b = gaussian_filter1d(np.clip(curve_b, 0, 1), sigma=300)
+            curves[stem] = {'a': curve_a.tolist(), 'b': curve_b.tolist()}
+        
+        return {
+            'type': 'bass_from_a_beat_from_b',
+            'curves': curves,
+            'description': 'Keep A bass, bring in B beat (drums); other/vocals crossfade'
+        }
+    
+    def _create_melody_a_drums_vocals_b(self,
+                                        stems_a: Dict,
+                                        stems_b: Dict,
+                                        available_stems: set,
+                                        phrase_ctx: Optional[Dict] = None) -> Dict:
+        """
+        Keep Song A's melody (other) and bring in Song B's drums + B's vocals.
+        So we hear A's instrumental hook with B's beat and B's vocal (e.g. Mask Off
+        melody + Follow God drums + Follow God vocal — Kanye fits his own beat).
+        """
+        phrase_ctx = phrase_ctx or {}
+        ref_stem = next((stems_a[s] for s in available_stems if len(stems_a[s]) > 0), None)
+        if ref_stem is None:
+            ref_stem = next((stems_b[s] for s in available_stems if len(stems_b[s]) > 0), None)
+        n_samples = len(ref_stem)
+        handoff_start_ratio = 0.20   # B drums + vocals start coming in at 20%
+        handoff_fade_ratio = 0.55    # Crossfade over 55%
+        start_sample = int(n_samples * handoff_start_ratio)
+        fade_samples = int(n_samples * handoff_fade_ratio)
+        end_sample = min(n_samples, start_sample + fade_samples)
+        
+        curves = {}
+        for stem in available_stems:
+            curve_a = np.ones(n_samples)
+            curve_b = np.zeros(n_samples)
+            
+            if stem == 'other':
+                # Keep A's melody (other) the whole time — Mask Off flute/synth under the transition
+                curve_a[:] = 1.0
+                curve_b[:] = 0.0
+            elif stem == 'drums':
+                # Replace A's drums with B's: bring in Follow God beat
+                curve_a[:start_sample] = 1.0
+                curve_b[:start_sample] = 0.0
+                if end_sample > start_sample:
+                    n_fade = end_sample - start_sample
+                    t = np.linspace(0, 1, n_fade)
+                    curve_a[start_sample:end_sample] = 0.5 * (1 + np.cos(np.pi * t))
+                    curve_b[start_sample:end_sample] = 0.5 * (1 - np.cos(np.pi * t))
+                curve_a[end_sample:] = 0.0
+                curve_b[end_sample:] = 1.0
+            elif stem == 'vocals':
+                # B's vocals only (incoming artist on their own beat)
+                curve_a[:] = 0.0
+                curve_b[:] = 1.0
+            else:
+                # bass: crossfade A→B so bass follows B's drums
+                curve_a[:start_sample] = 1.0
+                curve_b[:start_sample] = 0.0
+                if end_sample > start_sample:
+                    n_fade = end_sample - start_sample
+                    t = np.linspace(0, 1, n_fade)
+                    curve_a[start_sample:end_sample] = 0.5 * (1 + np.cos(np.pi * t))
+                    curve_b[start_sample:end_sample] = 0.5 * (1 - np.cos(np.pi * t))
+                curve_a[end_sample:] = 0.0
+                curve_b[end_sample:] = 1.0
+            
+            curve_a = gaussian_filter1d(np.clip(curve_a, 0, 1), sigma=300)
+            curve_b = gaussian_filter1d(np.clip(curve_b, 0, 1), sigma=300)
+            curves[stem] = {'a': curve_a.tolist(), 'b': curve_b.tolist()}
+        
+        return {
+            'type': 'melody_a_drums_vocals_b',
+            'curves': curves,
+            'description': 'A melody (other) + B drums + B vocals (e.g. Mask Off melody, Follow God beat + vocal)'
+        }
+    
     # ==================== VOCAL PHRASE DETECTION ====================
     
     def detect_vocal_phrases(self, vocal_stem: np.ndarray) -> Dict:
@@ -681,17 +871,20 @@ class StemOrchestrator:
                         conversation: Dict,
                         apply_effects: bool = True,
                         effect_params: Optional[Dict] = None,
-                        role_plan: Optional[Dict] = None) -> np.ndarray:
+                        role_plan: Optional[Dict] = None,
+                        mix_at_level: bool = True) -> np.ndarray:
         """
         Create the final mix from stem conversation specification.
-        
+
         Args:
             stems_a: Dict of stems from Song A
             stems_b: Dict of stems from Song B
             conversation: Conversation spec from create_stem_conversation
             apply_effects: Whether to apply stem effects
             effect_params: Effect parameters per stem
-        
+            role_plan: Optional vocal/bed plan (mute one vocal, bias bed)
+            mix_at_level: If True, use equal-power curves and normalize output so no volume dip
+
         Returns:
             Mixed audio
         """
@@ -706,14 +899,29 @@ class StemOrchestrator:
             return np.zeros(44100)  # 1 second of silence
         
         n_samples = len(ref_stem)
-        
-        # Determine output shape
-        if ref_stem.ndim == 1:
-            mixed = np.zeros(n_samples)
-        else:
-            mixed = np.zeros((n_samples, ref_stem.shape[1]))
-        
         common_stems = set(stems_a.keys()) & set(stems_b.keys()) & set(curves.keys())
+        
+        # Output shape: stereo if any stem is stereo (avoid broadcast mismatch)
+        out_stereo = False
+        n_channels = 1
+        for sn in common_stems:
+            sa = stems_a.get(sn)
+            sb = stems_b.get(sn)
+            if sa is not None and sa.ndim == 2:
+                out_stereo = True
+                n_channels = sa.shape[1]
+                break
+            if sb is not None and sb.ndim == 2:
+                out_stereo = True
+                n_channels = sb.shape[1]
+                break
+        if out_stereo and ref_stem.ndim == 2:
+            n_channels = ref_stem.shape[1]
+        
+        if out_stereo:
+            mixed = np.zeros((n_samples, n_channels))
+        else:
+            mixed = np.zeros(n_samples)
         
         for stem_name in common_stems:
             stem_a = stems_a.get(stem_name, np.zeros(n_samples))
@@ -753,8 +961,9 @@ class StemOrchestrator:
                                 effect_type, eparams, progress
                             )
             
-            # Apply vocal/bed role plan if provided
-            if role_plan is not None:
+            # Apply vocal/bed role plan if provided (skip for vocal_overlay_handoff; curves are explicit)
+            conv_type = conversation.get('type', '')
+            if role_plan is not None and conv_type != 'vocal_overlay_handoff':
                 bed_src = role_plan.get('bed_source', 'a')
                 vocal_src = role_plan.get('vocal_source', 'a')
                 
@@ -770,23 +979,54 @@ class StemOrchestrator:
                         curve_b *= 0.3
                     elif bed_src == 'b':
                         curve_a *= 0.3
-            
-            # Apply curves
+
+            # Mix at level: equal-power curves so combined level stays constant (no dip)
+            if mix_at_level:
+                power = np.sqrt(np.square(curve_a) + np.square(curve_b) + 1e-12)
+                scale = np.where(power > 1e-8, 1.0 / power, 1.0)
+                curve_a = curve_a * scale
+                curve_b = curve_b * scale
+
+            # Apply curves; ensure contributions match mixed shape (mono vs stereo)
             samples = min(len(stem_a), len(stem_b), n_samples)
+            curve_a_s = curve_a[:samples]
+            curve_b_s = curve_b[:samples]
             
-            if stem_a.ndim == 1:
-                contribution_a = stem_a[:samples] * curve_a[:samples]
-                contribution_b = stem_b[:samples] * curve_b[:samples]
+            if out_stereo:
+                # Mixed is (n_samples, n_channels); contributions must broadcast to that
+                if stem_a.ndim == 1:
+                    contribution_a = (stem_a[:samples] * curve_a_s)[:, np.newaxis]
+                else:
+                    ch_a = min(stem_a.shape[1], n_channels)
+                    contribution_a = stem_a[:samples, :ch_a] * curve_a_s[:, np.newaxis]
+                    if ch_a < n_channels:
+                        contribution_a = np.column_stack([contribution_a] + [contribution_a[:, 0]] * (n_channels - ch_a))
+                if stem_b.ndim == 1:
+                    contribution_b = (stem_b[:samples] * curve_b_s)[:, np.newaxis]
+                else:
+                    ch_b = min(stem_b.shape[1], n_channels)
+                    contribution_b = stem_b[:samples, :ch_b] * curve_b_s[:, np.newaxis]
+                    if ch_b < n_channels:
+                        contribution_b = np.column_stack([contribution_b] + [contribution_b[:, 0]] * (n_channels - ch_b))
             else:
-                contribution_a = stem_a[:samples] * curve_a[:samples, np.newaxis]
-                contribution_b = stem_b[:samples] * curve_b[:samples, np.newaxis]
+                # Mixed is 1D
+                if stem_a.ndim == 1:
+                    contribution_a = stem_a[:samples] * curve_a_s
+                else:
+                    contribution_a = np.mean(stem_a[:samples], axis=1) * curve_a_s
+                if stem_b.ndim == 1:
+                    contribution_b = stem_b[:samples] * curve_b_s
+                else:
+                    contribution_b = np.mean(stem_b[:samples], axis=1) * curve_b_s
             
             mixed[:samples] += contribution_a + contribution_b
         
-        # Normalize
+        # Normalize: mix_at_level => always to 0.95 peak (no dip); else only limit peak
         max_val = np.max(np.abs(mixed))
-        if max_val > 0.95:
-            mixed = mixed * (0.95 / max_val)
+        if max_val > 1e-12:
+            target = 0.95
+            if mix_at_level or max_val > target:
+                mixed = mixed * (target / max_val)
         
         return mixed
     
@@ -817,21 +1057,28 @@ class StemOrchestrator:
         # Recommend conversation type
         has_vocals_a = analysis['stems_a'].get('vocals', {}).get('has_content', False)
         has_vocals_b = analysis['stems_b'].get('vocals', {}).get('has_content', False)
+        has_bass_a = analysis['stems_a'].get('bass', {}).get('has_content', False)
+        has_bass_b = analysis['stems_b'].get('bass', {}).get('has_content', False)
+        has_drums_a = analysis['stems_a'].get('drums', {}).get('has_content', False)
+        has_drums_b = analysis['stems_b'].get('drums', {}).get('has_content', False)
         
         if has_vocals_a and has_vocals_b:
-            # Both have vocals - use careful layering
-            recommended = 'interweave'
+            # Both have vocals: layer B vocals on A bed, then introduce B music (e.g. Hey Jude on Yesterday)
+            recommended = 'vocal_overlay_handoff'
         elif has_vocals_a and not has_vocals_b:
             # Song A vocals can play over Song B
             recommended = 'counter_melody'
         elif has_vocals_b and not has_vocals_a:
             # Reveal Song B vocals last
             recommended = 'layered_reveal'
+        elif has_bass_a and has_bass_b and has_drums_a and has_drums_b:
+            # Both have bass and drums: keep A bass, bring in B beat (e.g. New Person → Let It Happen)
+            recommended = 'bass_from_a_beat_from_b'
         else:
             # Instrumental - call and response works well
             recommended = 'call_response'
         
         analysis['recommended_conversation'] = recommended
-        analysis['reasoning'] = f"Based on vocal content: A has vocals={has_vocals_a}, B has vocals={has_vocals_b}"
+        analysis['reasoning'] = f"Based on stems: A vocals={has_vocals_a}, B vocals={has_vocals_b}; A/B bass+drums → {recommended}"
         
         return analysis

@@ -490,10 +490,33 @@ class SmartTransitionFinder:
         # Sort by combined score (best first)
         evaluated_pairs.sort(key=lambda x: x['combined_score'], reverse=True)
         
-        # Return top 3 candidates for final selection
+        # When no candidates (e.g. no transition points found), return a safe default instead of recursing
         if not evaluated_pairs:
-            # Fallback to original method
-            return self.find_best_transition_pair(song_a_path, song_b_path, song_a_analysis, song_b_analysis)
+            print("  No transition candidates found; using default overlap points.")
+            duration_a = len(y_a) / sr_a
+            duration_b = len(y_b) / sr_b
+            # Default: transition out of A around 60%, into B around 10%
+            default_time_a = max(10.0, duration_a * 0.6)
+            default_time_b = min(duration_b - 5.0, max(5.0, duration_b * 0.1))
+            default_time_a = min(default_time_a, duration_a - 10.0)
+            default_point_a = TransitionPoint(
+                time_sec=default_time_a, beat_aligned=True, energy=0.5, energy_trend='stable',
+                structural_label='unknown', score=0.5, beat_position=0
+            )
+            default_point_b = TransitionPoint(
+                time_sec=default_time_b, beat_aligned=True, energy=0.5, energy_trend='stable',
+                structural_label='unknown', score=0.5, beat_position=0
+            )
+            return TransitionPair(
+                song_a_point=default_point_a,
+                song_b_point=default_point_b,
+                compatibility_score=0.5,
+                tempo_match=abs(tempo_a - tempo_b) < 5,
+                key_match=self._keys_compatible(key_a, key_b) if key_a and key_b else True,
+                beat_aligned=True,
+                quality_factors={'harmonic_compatibility': 0.7, 'energy_compatibility': 0.5, 'structural_compatibility': 0.5,
+                                 'tempo_phase_match': 0.5, 'spectral_clash_risk': 0.5, 'vocal_overlap_risk': 0.5, 'beat_alignment_quality': 1.0}
+            )
         
         # Use best candidate
         best = evaluated_pairs[0]

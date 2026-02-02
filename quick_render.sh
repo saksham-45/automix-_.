@@ -10,7 +10,7 @@ yt-dlp -x --audio-format wav --postprocessor-args "ffmpeg:-t 30" \
   -o /tmp/song_a.wav "https://youtu.be/YE93dD6jjoU?si=I4SeUbjVGivIbeCm" 2>&1 | tail -3
 
 yt-dlp -x --audio-format wav --postprocessor-args "ffmpeg:-t 30" \
-  -o /tmp/song_b.wav "https://youtu.be/MHryuYVyHhk?si=8oLFIgeREpwAGM1K" 2>&1 | tail -3
+  -o /tmp/song_b.wav "https://www.youtube.com/watch?v=RjY6ScIvZLQ" 2>&1 | tail -3
 
 echo ""
 echo "Step 2: Rendering mix..."

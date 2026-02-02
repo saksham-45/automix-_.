@@ -151,27 +151,55 @@ def fetch_playlist_video_ids(playlist_url: str) -> list[dict]:
     """Return list of {id, title} for each entry in the playlist."""
     try:
         import yt_dlp
+        ydl_opts = {
+            "quiet": True,
+            "extract_flat": True,
+            "skip_download": True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(playlist_url, download=False)
+        if not info or "entries" not in info:
+            raise ValueError("Not a valid playlist or no entries")
+        entries = []
+        for entry in info["entries"]:
+            if entry is None:
+                continue
+            vid = entry.get("id")
+            if not vid:
+                continue
+            entries.append({"id": vid, "title": entry.get("title", vid)})
+        return entries
     except ImportError:
-        print("✗ yt-dlp required. Install: pip install yt-dlp")
-        sys.exit(1)
+        pass  # Fall back to CLI
 
-    ydl_opts = {
-        "quiet": True,
-        "extract_flat": True,
-        "skip_download": True,
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(playlist_url, download=False)
-    if not info or "entries" not in info:
-        raise ValueError("Not a valid playlist or no entries")
+    # Fallback: use yt-dlp CLI when Python package not installed
+    result = subprocess.run(
+        [
+            "yt-dlp",
+            "--flat-playlist",
+            "--print", "%(id)s\t%(title)s",
+            "--no-warnings",
+            playlist_url,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if result.returncode != 0:
+        print("✗ Failed to fetch playlist. Install yt-dlp: brew install yt-dlp (or pip install yt-dlp in a venv)")
+        sys.exit(1)
     entries = []
-    for entry in info["entries"]:
-        if entry is None:
+    for line in (result.stdout or "").strip().splitlines():
+        line = line.strip()
+        if not line:
             continue
-        vid = entry.get("id")
-        if not vid:
-            continue
-        entries.append({"id": vid, "title": entry.get("title", vid)})
+        parts = line.split("\t", 1)
+        vid = parts[0].strip()
+        title = parts[1].strip() if len(parts) > 1 else vid
+        if vid and not vid.startswith("#"):
+            entries.append({"id": vid, "title": title})
+    if not entries:
+        raise ValueError("Not a valid playlist or no entries")
     return entries
 
 

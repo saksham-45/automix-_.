@@ -12,8 +12,9 @@ This engine coordinates all modules to create transitions that exceed
 what human DJs can achieve in terms of precision, creativity, and quality.
 """
 import numpy as np
-from typing import Dict, List, Tuple, Optional
+import random
 import time
+from typing import Dict, List, Tuple, Optional
 
 
 class SuperhumanDJEngine:
@@ -61,6 +62,17 @@ class SuperhumanDJEngine:
             'max_tempo_shift_pct': 0.06,
             # 'never', 'rare', 'allowed'
             'allow_simultaneous_vocals': 'rare',
+            # Mix at level: equal-power curves + normalize so no volume dip
+            'mix_at_level': True,
+            # BPM matching: apply tempo morph whenever |tempo_a - tempo_b| > min_diff (not only when role_plan)
+            'bpm_matching_always': True,
+            'bpm_matching_min_diff': 1.0,
+            # Use selected technique (filter_sweep, drop_mix, etc.) this fraction of the time instead of stem crossfade
+            'technique_execution_ratio': 0.45,
+            # Key modulation: pitch-shift A/B so they match or sit in compatible key (A/B material only)
+            'key_modulation_enabled': True,
+            'key_modulation_max_semitones': 2,
+            'key_modulation_only_when_incompatible': True,
         }
     
     def configure(self, **kwargs):
@@ -79,7 +91,9 @@ class SuperhumanDJEngine:
                               key_b: str = None,
                               stems_a: Optional[Dict] = None,
                               stems_b: Optional[Dict] = None,
-                              techniques: Optional[List[str]] = None) -> Dict:
+                              techniques: Optional[List[str]] = None,
+                              force_stem_orchestration: Optional[bool] = None,
+                              conversation_type_override: Optional[str] = None) -> Dict:
         """
         Create a superhuman quality mix using all advanced capabilities.
         
@@ -238,29 +252,13 @@ class SuperhumanDJEngine:
                 seg_a, seg_b, primary_technique, {},
                 threshold=self.config.get('quality_threshold', 0.55)
             )
-            
             analysis['prediction'] = {
                 'predicted_quality': prediction['predicted_quality'],
                 'should_proceed': should_proceed,
                 'recommendation': prediction['recommendation']
             }
-            
-            if not should_proceed:
-                print(f"    ⚠ Predicted quality {prediction['predicted_quality']:.2f} below threshold")
-                print("    → Trying alternative techniques...")
-                
-                # Try alternatives
-                alternatives = ['long_blend', 'bass_swap', 'filter_sweep', 'phrase_match']
-                for alt in alternatives:
-                    if alt not in selected_technique['techniques']:
-                        alt_should, alt_pred = self.montecarlo.should_proceed(
-                            seg_a, seg_b, alt, {}
-                        )
-                        if alt_should and alt_pred['predicted_quality'] > prediction['predicted_quality']:
-                            selected_technique = {'techniques': [alt], 'weights': [1.0]}
-                            analysis['technique']['fallback'] = alt
-                            break
-        
+            # Selected technique is always executed; no fallback to other techniques.
+
         analysis['timings']['prediction'] = time.time() - stage_start
         analysis['stages'].append('prediction_complete')
         
@@ -289,6 +287,9 @@ class SuperhumanDJEngine:
             
             # Create stem conversation with phrase data for phrase-aware, gentler fades
             recommended_conv = stem_analysis.get('recommended_conversation', 'layered_reveal')
+            override_conv = conversation_type_override or self.config.get('conversation_type')
+            if override_conv:
+                recommended_conv = override_conv
             conversation = self.stem_orchestrator.create_stem_conversation(
                 stems_a, stems_b, recommended_conv,
                 phrase_data_a=phrase_data_a,
@@ -309,6 +310,9 @@ class SuperhumanDJEngine:
                 stem_analysis
             )
             if role_plan is not None:
+                # When B's vocals/drums layer over A's content, B must match A's BPM so the overlap is in sync
+                if recommended_conv in ('melody_a_drums_vocals_b', 'vocal_overlay_handoff'):
+                    role_plan['tempo_target'] = 'a'
                 analysis['vocal_bed_plan'] = role_plan
         
         analysis['timings']['stem_orchestration'] = time.time() - stage_start
@@ -326,10 +330,15 @@ class SuperhumanDJEngine:
         analysis['spectral_morph_stages'] = 0
         print(f"    ✓ Using original segments (spectral info for reference)")
         
-        # Optional: apply short, overlap-only tempo morphing based on role plan
+        # Optional: apply short, overlap-only tempo morphing (from role plan or always when BPM diff significant)
         tempo_morph_info = None
+        max_pct = float(self.config.get('max_tempo_shift_pct', 0.06))
+        bpm_matching_always = self.config.get('bpm_matching_always', True)
+        bpm_matching_min_diff = float(self.config.get('bpm_matching_min_diff', 1.0))
+        tempo_diff = abs(tempo_a - tempo_b)
+        apply_bpm_match = bpm_matching_always and tempo_diff >= bpm_matching_min_diff
+
         if role_plan is not None:
-            max_pct = float(self.config.get('max_tempo_shift_pct', 0.06))
             target = role_plan.get('tempo_target', 'a')
             # Decide which side(s) to morph
             if target == 'b':
@@ -361,9 +370,99 @@ class SuperhumanDJEngine:
                     'morph_a': morph_a,
                     'morph_b': morph_b
                 }
-        
+        elif apply_bpm_match:
+            # No role plan but BPM diff significant: morph both toward mid-tempo
+            mid_tempo = 0.5 * (tempo_a + tempo_b)
+            morph_a = self.micro_timing.create_limited_tempo_morph(
+                tempo_a, mid_tempo, len(seg_a_processed), max_shift_pct=max_pct
+            )
+            morph_b = self.micro_timing.create_limited_tempo_morph(
+                tempo_b, mid_tempo, len(seg_b_processed), max_shift_pct=max_pct
+            )
+            seg_a_processed = self.micro_timing.apply_tempo_morph(seg_a_processed, morph_a)
+            seg_b_processed = self.micro_timing.apply_tempo_morph(seg_b_processed, morph_b)
+            tempo_morph_info = {
+                'source': 'both',
+                'target_tempo': 'mid',
+                'reason': 'bpm_matching_always',
+                'morph_a': morph_a,
+                'morph_b': morph_b
+            }
+
         if tempo_morph_info is not None:
             analysis['tempo_morph'] = tempo_morph_info
+            # Apply the same tempo morph to stems so orchestration uses tempo-aligned stems (e.g. One Kiss beat → Hell of a Life beat)
+            if stems_a is not None or stems_b is not None:
+                source = tempo_morph_info.get('source', '')
+                if source == 'a':
+                    morph = tempo_morph_info
+                    if stems_a is not None:
+                        for k in list(stems_a.keys()):
+                            stems_a[k] = self.micro_timing.apply_tempo_morph(stems_a[k], morph)
+                elif source == 'b':
+                    morph = tempo_morph_info
+                    if stems_b is not None:
+                        for k in list(stems_b.keys()):
+                            stems_b[k] = self.micro_timing.apply_tempo_morph(stems_b[k], morph)
+                elif source == 'both':
+                    morph_a = tempo_morph_info.get('morph_a')
+                    morph_b = tempo_morph_info.get('morph_b')
+                    if morph_a is not None and stems_a is not None:
+                        for k in list(stems_a.keys()):
+                            stems_a[k] = self.micro_timing.apply_tempo_morph(stems_a[k], morph_a)
+                    if morph_b is not None and stems_b is not None:
+                        for k in list(stems_b.keys()):
+                            stems_b[k] = self.micro_timing.apply_tempo_morph(stems_b[k], morph_b)
+        
+        # ==================== KEY MODULATION (optional pitch shift for fit) ====================
+        key_modulation_info = None
+        if self.config.get('key_modulation_enabled', True):
+            from src.harmonic_analyzer import HarmonicAnalyzer
+            import librosa
+            _key_a = key_a
+            _key_b = key_b
+            if (_key_a is None or _key_a == '' or _key_b is None or _key_b == ''):
+                try:
+                    harm = HarmonicAnalyzer(sr=self.sr)
+                    if _key_a is None or _key_a == '':
+                        _key_a = harm.detect_key_camelot(seg_a_processed if seg_a_processed.ndim == 1 else seg_a_processed.mean(axis=1)).get('key', 'C')
+                    if _key_b is None or _key_b == '':
+                        _key_b = harm.detect_key_camelot(seg_b_processed if seg_b_processed.ndim == 1 else seg_b_processed.mean(axis=1)).get('key', 'C')
+                except Exception:
+                    _key_a = _key_a or 'C'
+                    _key_b = _key_b or 'C'
+            if _key_a and _key_b:
+                harm = HarmonicAnalyzer(sr=self.sr)
+                only_when = self.config.get('key_modulation_only_when_incompatible', True)
+                compat = harm.are_keys_compatible(_key_a, _key_b)
+                if not only_when or not compat.get('compatible', True):
+                    max_st = int(self.config.get('key_modulation_max_semitones', 2))
+                    suggestion = harm.suggest_modulation_semitones(_key_a, _key_b, strategy='match_b', max_semitones=max_st)
+                    sa = suggestion.get('shift_a_semitones', 0)
+                    sb = suggestion.get('shift_b_semitones', 0)
+                    if sa != 0 or sb != 0:
+                        def _pitch_shift_audio(y: np.ndarray, sr: int, n_steps: float) -> np.ndarray:
+                            if np.abs(n_steps) < 0.01:
+                                return y
+                            if y.ndim == 1:
+                                return librosa.effects.pitch_shift(y, sr=sr, n_steps=n_steps)
+                            out = np.zeros_like(y)
+                            for ch in range(y.shape[1]):
+                                out[:, ch] = librosa.effects.pitch_shift(y[:, ch], sr=sr, n_steps=n_steps)
+                            return out
+                        if sa != 0:
+                            seg_a_processed = _pitch_shift_audio(seg_a_processed, self.sr, float(sa))
+                            if stems_a is not None:
+                                for k in list(stems_a.keys()):
+                                    stems_a[k] = _pitch_shift_audio(stems_a[k], self.sr, float(sa))
+                        if sb != 0:
+                            seg_b_processed = _pitch_shift_audio(seg_b_processed, self.sr, float(sb))
+                            if stems_b is not None:
+                                for k in list(stems_b.keys()):
+                                    stems_b[k] = _pitch_shift_audio(stems_b[k], self.sr, float(sb))
+                        key_modulation_info = {'shift_a_semitones': sa, 'shift_b_semitones': sb, 'reason': suggestion.get('reason', '')}
+            if key_modulation_info is not None:
+                analysis['key_modulation'] = key_modulation_info
         
         analysis['timings']['spectral_processing'] = time.time() - stage_start
         analysis['stages'].append('spectral_applied')
@@ -372,20 +471,31 @@ class SuperhumanDJEngine:
         print("  🎵 Stage 6: Executing Transition...")
         stage_start = time.time()
         
-        # Use stem orchestration if available, otherwise use technique executor
+        # Decide: stem orchestration (crossfade-style) vs actual technique (filter_sweep, drop_mix, etc.)
+        use_technique_path = False
         if conversation is not None and stems_a is not None and stems_b is not None:
-            # Orchestrated stem mix
+            if force_stem_orchestration is True or self.config.get('force_stem_orchestration', False):
+                use_technique_path = False  # Force One Kiss beat → Hell of a Life beat handoff
+                print("    ✓ Forcing stem orchestration (One Kiss beat → Hell of a Life handoff)")
+            else:
+                ratio = float(self.config.get('technique_execution_ratio', 0.45))
+                use_technique_path = random.random() < ratio
+        if not (conversation is not None and stems_a is not None and stems_b is not None):
+            use_technique_path = True  # No stems: must use technique path
+        
+        if (conversation is not None and stems_a is not None and stems_b is not None) and not use_technique_path:
+            # Orchestrated stem mix (crossfade-style)
             mixed = self.stem_orchestrator.orchestrate_mix(
-                stems_a, stems_b, conversation, role_plan=role_plan
+                stems_a, stems_b, conversation, role_plan=role_plan,
+                mix_at_level=self.config.get('mix_at_level', True)
             )
             analysis['mix_method'] = 'stem_orchestration'
         else:
-            # Use hybrid technique blender
+            # Use selected technique so we get real filter_sweep, drop_mix, backspin, etc.
             from src.technique_executor import TechniqueExecutor
             technique_executor = TechniqueExecutor(sr=self.sr)
             
             if len(selected_technique['techniques']) > 1:
-                # Hybrid execution
                 mixed = self.technique_blender.execute_hybrid(
                     seg_a_processed, seg_b_processed,
                     selected_technique,
@@ -394,7 +504,6 @@ class SuperhumanDJEngine:
                 )
                 analysis['mix_method'] = 'hybrid_technique'
             else:
-                # Single technique
                 mixed = technique_executor.execute(
                     selected_technique['techniques'][0],
                     seg_a_processed, seg_b_processed,

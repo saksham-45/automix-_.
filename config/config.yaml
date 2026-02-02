@@ -103,4 +103,24 @@ superhuman:
   vocal_bed_swap_enabled: true
   max_tempo_shift_pct: 0.06
   allow_simultaneous_vocals: "rare"
+  # Mix at level: no volume dip; equal-power blend so neither track is "lowered"
+  mix_at_level: true
+  # BPM matching: always align tempo during overlap when BPM diff > threshold (not only when role_plan exists)
+  bpm_matching_always: true
+  bpm_matching_min_diff: 1.0  # Apply tempo morph when |tempo_a - tempo_b| > this (BPM)
+  # Use selected technique (filter_sweep, drop_mix, etc.) this fraction of the time instead of stem crossfade (0–1)
+  technique_execution_ratio: 0.45
+  # When true, always use stem orchestration (One Kiss beat → Hell of a Life beat handoff) instead of hybrid techniques
+  force_stem_orchestration: false
+  # Override stem conversation type: null = use recommended, or e.g. "bass_from_a_beat_from_b" (keep A bass, B beat)
+  conversation_type: null
+  # Key modulation: pitch-shift A/B so they match compatible key (A/B material only)
+  key_modulation_enabled: true
+  key_modulation_max_semitones: 2
+  key_modulation_only_when_incompatible: true
 
+# Creative technique selection (optional; defaults in code used if not set)
+creativity:
+  technique_diversity: "top_k"  # "top_k" or "random_nudge"
+  top_k: 3                      # Choose randomly among top N techniques by score
+  random_nudge: 0.1             # If technique_diversity is "random_nudge", add ±nudge to scores

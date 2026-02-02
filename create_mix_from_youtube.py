@@ -10,15 +10,47 @@ import argparse
 temp_dir = Path('temp_audio')
 temp_dir.mkdir(exist_ok=True)
 
-def download_youtube_audio(url: str, output_path: Path, max_duration: int = 60, from_end: bool = False) -> Path:
+
+def resolve_to_youtube_url(url_or_query: str, prefer: str = "official audio") -> str:
+    """If input is already a YouTube URL, return it (strip tracking params). Otherwise treat as search query and resolve to first result (official audio or lyrics) to avoid geo-blocks."""
+    s = url_or_query.strip()
+    if "youtu.be/" in s:
+        return s.split("?")[0]
+    if "youtube.com" in s and "watch?v=" in s:
+        from urllib.parse import urlparse, parse_qs
+        parsed = urlparse(s)
+        vid = (parse_qs(parsed.query).get("v") or [None])[0]
+        if vid:
+            return f"https://www.youtube.com/watch?v={vid}"
+        return s
+    # Search query: resolve to first "official audio" or "lyrics" result
+    search = f'ytsearch1:{s} {prefer}'
+    try:
+        result = subprocess.run(
+            ["yt-dlp", "-q", "--get-id", "--no-playlist", search],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            vid = result.stdout.strip().split("\n")[0].strip()
+            return f"https://www.youtube.com/watch?v={vid}"
+    except Exception:
+        pass
+    return url_or_query
+
+
+def download_youtube_audio(url: str, output_path: Path, max_duration: int = 60, from_end: bool = False, prefer: str = "official audio") -> Path:
     """Download audio from YouTube URL, limit to max_duration seconds.
     
     Args:
-        url: YouTube URL
+        url: YouTube URL or search query (e.g. 'Tame Impala Let It Happen'). Queries are resolved to 'official audio' / lyrics to avoid geo-blocks.
         output_path: Path to save the audio file
         max_duration: Duration in seconds to extract
         from_end: If True, extract last N seconds. If False, extract first N seconds.
+        prefer: When url is a search query, prefer 'official audio' or 'lyrics'.
     """
+    url = resolve_to_youtube_url(url, prefer=prefer)
     print(f"Downloading: {url}")
     if from_end:
         print(f"  → {output_path.name} (last {max_duration}s)")
@@ -128,11 +160,19 @@ def download_youtube_audio(url: str, output_path: Path, max_duration: int = 60, 
         raise
 
 def main():
-    parser = argparse.ArgumentParser(description='Create DJ mix from two YouTube URLs')
-    parser.add_argument('url1', help='YouTube URL for song A (outgoing)')
-    parser.add_argument('url2', help='YouTube URL for song B (incoming)')
+    parser = argparse.ArgumentParser(
+        description='Create DJ mix from two YouTube URLs or search queries. Prefers official audio / lyrics to avoid geo-blocks.'
+    )
+    parser.add_argument('url1', help='YouTube URL or search query for song A (outgoing), e.g. "Tame Impala Let It Happen"')
+    parser.add_argument('url2', help='YouTube URL or search query for song B (incoming), e.g. "Tame Impala New Person Same Old Mistakes"')
     parser.add_argument('--duration', type=int, default=60, 
                        help='Max duration to download from each video (seconds, default: 60)')
+    parser.add_argument('--prefer', choices=['official audio', 'lyrics'], default='official audio',
+                       help='When using a search query, prefer "official audio" or "lyrics" (default: official audio)')
+    parser.add_argument('--force-stem-orchestration', action='store_true',
+                       help='Force stem orchestration instead of hybrid techniques')
+    parser.add_argument('--conversation-type', type=str, default=None,
+                       help='Stem handoff type: e.g. melody_a_drums_vocals_b (A melody + B drums + B vocals), bass_from_a_beat_from_b, vocal_overlay_handoff')
     parser.add_argument('--keep', action='store_true',
                        help='Keep downloaded audio files (default: delete after mixing)')
     
@@ -152,11 +192,11 @@ def main():
         song_b_path.unlink()
     
     try:
-        # Download both songs
+        # Download both songs (prefer official audio / lyrics to avoid geo-blocks)
         # Song A: last 60 seconds (from_end=True)
-        download_youtube_audio(args.url1, song_a_path, args.duration, from_end=True)
+        download_youtube_audio(args.url1, song_a_path, args.duration, from_end=True, prefer=args.prefer)
         # Song B: first 60 seconds (from_end=False)
-        download_youtube_audio(args.url2, song_b_path, args.duration, from_end=False)
+        download_youtube_audio(args.url2, song_b_path, args.duration, from_end=False, prefer=args.prefer)
         
         print("\n" + "="*60)
         print("CREATING MIX")
@@ -172,6 +212,8 @@ def main():
             transition_duration=16.0,
             creativity_level=0.6,
             optimize_quality=True,
+            force_stem_orchestration=getattr(args, 'force_stem_orchestration', False),
+            conversation_type_override=getattr(args, 'conversation_type', None),
         )
         base_name = 'ai_dj_mix'
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')

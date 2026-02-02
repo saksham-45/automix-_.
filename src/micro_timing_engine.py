@@ -770,5 +770,10 @@ class MicroTimingEngine:
                 return 'bass_swap'  # Different syncopation = bass swap to bridge
             else:
                 return 'phrase_match'
+        elif compatibility >= 0.5:
+            # Medium compatibility: bridge with a loop when sync differs slightly
+            if abs(sync_a - sync_b) > 0.15:
+                return 'loop_transition'
+            return 'phrase_match'
         else:
             return 'quick_cut'  # Low compatibility = quick cut

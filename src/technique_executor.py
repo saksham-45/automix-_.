@@ -59,7 +59,11 @@ class TechniqueExecutor:
             'modulation': self._execute_modulation,
             'energy_build': self._execute_energy_build,
             'loop_transition': self._execute_loop_transition,
-            'breakdown_to_build': self._execute_breakdown_to_build
+            'breakdown_to_build': self._execute_breakdown_to_build,
+            'drop_on_the_one': self._execute_drop_on_the_one,
+            'back_and_forth': self._execute_back_and_forth,
+            'drum_roll': self._execute_drum_roll,
+            'thematic_handoff': self._execute_thematic_handoff
         }
         
         if technique_name in method_map:
@@ -625,13 +629,18 @@ class TechniqueExecutor:
                          params: Dict,
                          seg_a_stems: Optional[Dict] = None,
                          seg_b_stems: Optional[Dict] = None) -> np.ndarray:
-        """Execute backspin: spin out outgoing track (reverse/tape stop effect)."""
+        """Execute backspin: spin out outgoing track (reverse/tape stop effect).
+        Song A plays the backspin effect, then is cut to zero immediately when the effect
+        ends (no tail) so only Song B continues."""
         from src.crossfade_engine import CrossfadeEngine
         crossfade_engine = CrossfadeEngine(sr=self.sr)
         
         n_samples = min(len(seg_a), len(seg_b))
         spin_duration_ratio = params.get('spin_duration_ratio', 0.6)
         tape_stop = params.get('tape_stop', True)
+        # Short ramp (ms) at effect end to avoid click when cutting A to zero
+        cut_ramp_ms = params.get('backspin_cut_ramp_ms', 50)
+        cut_ramp_samples = min(int(self.sr * cut_ramp_ms / 1000), n_samples // 10)
         
         if seg_a.ndim == 1:
             seg_a = np.column_stack([seg_a, seg_a])
@@ -650,10 +659,16 @@ class TechniqueExecutor:
                 indices = np.clip(indices, 0, len(spin_section) - 1)
                 seg_a_spin[spin_start_idx:, ch] = spin_section[indices]
         
+        # Song A: full level during backspin; when effect ends, cut to zero (short ramp to avoid click)
         fade_out = np.ones(n_samples)
-        fade_out[spin_start_idx:] = np.linspace(1.0, 0.0, n_samples - spin_start_idx)
+        effect_end = n_samples - cut_ramp_samples  # effect "done" here; then ramp A to 0 over 50ms
+        if effect_end > 0 and cut_ramp_samples > 0:
+            fade_out[effect_end:] = np.linspace(1.0, 0.0, n_samples - effect_end)
+        
+        # Song B: fade in during backspin, full after A is cut
         fade_in = np.zeros(n_samples)
         fade_in[spin_start_idx:] = np.linspace(0.0, 1.0, n_samples - spin_start_idx)
+        fade_in[effect_end:] = 1.0
         
         if fade_out.ndim == 1:
             fade_out = fade_out[:, np.newaxis]
@@ -765,9 +780,28 @@ class TechniqueExecutor:
                            params: Dict,
                            seg_a_stems: Optional[Dict] = None,
                            seg_b_stems: Optional[Dict] = None) -> np.ndarray:
-        """Execute modulation: smooth key change during transition."""
+        """Execute modulation: smooth key change during transition (pitch-shift then crossfade)."""
         from src.crossfade_engine import CrossfadeEngine
+        import librosa
         crossfade_engine = CrossfadeEngine(sr=self.sr)
+        
+        shift_a = params.get('shift_a_semitones', 0) or 0
+        shift_b = params.get('shift_b_semitones', 0) or 0
+        
+        def _pitch_shift(y: np.ndarray, n_steps: float) -> np.ndarray:
+            if abs(n_steps) < 0.01:
+                return y
+            if y.ndim == 1:
+                return librosa.effects.pitch_shift(y, sr=self.sr, n_steps=n_steps)
+            out = np.zeros_like(y)
+            for ch in range(y.shape[1]):
+                out[:, ch] = librosa.effects.pitch_shift(y[:, ch], sr=self.sr, n_steps=n_steps)
+            return out
+        
+        if shift_a != 0:
+            seg_a = _pitch_shift(seg_a.copy(), float(shift_a))
+        if shift_b != 0:
+            seg_b = _pitch_shift(seg_b.copy(), float(shift_b))
         
         n_samples = min(len(seg_a), len(seg_b))
         vol_a, vol_b = crossfade_engine.create_equal_power_crossfade(n_samples, 'smooth')
@@ -858,8 +892,45 @@ class TechniqueExecutor:
                                 params: Dict,
                                 seg_a_stems: Optional[Dict] = None,
                                 seg_b_stems: Optional[Dict] = None) -> np.ndarray:
-        """Execute loop transition: use loops to create smooth mixing points."""
-        return self._execute_long_blend(seg_a, seg_b, params, seg_a_stems, seg_b_stems)
+        """Execute loop transition: repeat a short loop from seg_a, then crossfade to seg_b."""
+        from src.crossfade_engine import CrossfadeEngine
+        crossfade_engine = CrossfadeEngine(sr=self.sr)
+        n_samples = min(len(seg_a), len(seg_b))
+        loop_length_bars = params.get('loop_length_bars', 4)
+        loop_repeats = params.get('loop_repeats', 4)
+        # Assume ~120 BPM: 4 beats/bar, so 1 bar = 2 sec
+        bar_sec = 4.0 * (60.0 / 120.0)  # 2 sec per bar
+        loop_sec = loop_length_bars * bar_sec
+        loop_samples = min(int(loop_sec * self.sr), len(seg_a) // 2)
+        loop_samples = max(loop_samples, int(0.5 * self.sr))  # at least 0.5 sec
+        loop_portion_ratio = params.get('loop_portion_ratio', 0.4)
+        loop_portion = int(n_samples * loop_portion_ratio)
+        if seg_a.ndim == 1:
+            seg_a = np.column_stack([seg_a, seg_a])
+        if seg_b.ndim == 1:
+            seg_b = np.column_stack([seg_b, seg_b])
+        loop_slice = seg_a[-loop_samples:].copy()
+        n_repeats = max(1, loop_portion // len(loop_slice) + 1)
+        repeated = np.tile(loop_slice, (n_repeats, 1))[:loop_portion]
+        if len(repeated) < loop_portion:
+            pad = np.zeros((loop_portion - len(repeated), repeated.shape[1]), dtype=repeated.dtype)
+            repeated = np.vstack([repeated, pad])
+        seg_a_looped = np.zeros((n_samples, seg_a.shape[1]), dtype=seg_a.dtype)
+        seg_a_looped[:loop_portion] = repeated[:loop_portion]
+        crossfade_start = loop_portion
+        crossfade_len = n_samples - crossfade_start
+        vol_a = np.ones(n_samples)
+        vol_a[crossfade_start:] = np.linspace(1.0, 0.0, crossfade_len)
+        vol_b = np.zeros(n_samples)
+        vol_b[:crossfade_start] = 0.0
+        vol_b[crossfade_start:] = np.linspace(0.0, 1.0, crossfade_len)
+        seg_a_looped[crossfade_start:] = seg_a[crossfade_start:n_samples]
+        if vol_a.ndim == 1:
+            vol_a = vol_a[:, np.newaxis]
+        if vol_b.ndim == 1:
+            vol_b = vol_b[:, np.newaxis]
+        mixed = seg_a_looped * vol_a + seg_b[:n_samples] * vol_b
+        return mixed
     
     def _execute_breakdown_to_build(self,
                                     seg_a: np.ndarray,
@@ -891,3 +962,130 @@ class TechniqueExecutor:
         
         mixed = seg_a[:n_samples] * vol_a[:n_samples] + seg_b[:n_samples] * vol_b[:n_samples]
         return mixed
+
+    def _execute_drop_on_the_one(self,
+                                 seg_a: np.ndarray,
+                                 seg_b: np.ndarray,
+                                 params: Dict,
+                                 seg_a_stems: Optional[Dict] = None,
+                                 seg_b_stems: Optional[Dict] = None) -> np.ndarray:
+        """Execute drop on the one: instant cut on downbeat with minimal crossfade."""
+        n_samples = min(len(seg_a), len(seg_b))
+        fade_ms = params.get('fade_ms', 50)
+        fade_samples = min(int(fade_ms * self.sr / 1000), n_samples // 4)
+        fade_out = np.ones(n_samples)
+        if fade_samples > 0:
+            fade_out[-fade_samples:] = np.linspace(1.0, 0.0, fade_samples)
+        fade_in = np.zeros(n_samples)
+        if fade_samples > 0:
+            fade_in[:fade_samples] = np.linspace(0.0, 1.0, fade_samples)
+        if seg_a.ndim == 1:
+            seg_a = np.column_stack([seg_a, seg_a])
+        if seg_b.ndim == 1:
+            seg_b = np.column_stack([seg_b, seg_b])
+        if fade_out.ndim == 1:
+            fade_out = fade_out[:, np.newaxis]
+        if fade_in.ndim == 1:
+            fade_in = fade_in[:, np.newaxis]
+        mixed = seg_a[:n_samples] * fade_out + seg_b[:n_samples] * fade_in
+        return mixed
+
+    def _execute_back_and_forth(self,
+                               seg_a: np.ndarray,
+                               seg_b: np.ndarray,
+                               params: Dict,
+                               seg_a_stems: Optional[Dict] = None,
+                               seg_b_stems: Optional[Dict] = None) -> np.ndarray:
+        """Execute back-and-forth: alternate A and B every N bars, then settle on B."""
+        n_samples = min(len(seg_a), len(seg_b))
+        switch_interval_bars = params.get('switch_interval_bars', 8)
+        num_switches = params.get('num_switches', 2)
+        bar_sec = 4.0 * (60.0 / 120.0)
+        switch_samples = int(switch_interval_bars * bar_sec * self.sr)
+        switch_samples = min(switch_samples, n_samples // (num_switches + 1))
+        if switch_samples < 1:
+            switch_samples = n_samples // (num_switches + 1)
+        cf_samples = min(int(0.1 * self.sr), switch_samples // 4)
+        if seg_a.ndim == 1:
+            seg_a = np.column_stack([seg_a, seg_a])
+        if seg_b.ndim == 1:
+            seg_b = np.column_stack([seg_b, seg_b])
+        mixed = np.zeros((n_samples, seg_a.shape[1]), dtype=seg_a.dtype)
+        pos = 0
+        use_a = True
+        for _ in range(num_switches + 1):
+            end = min(pos + switch_samples, n_samples)
+            chunk = end - pos
+            if chunk <= 0:
+                break
+            if use_a:
+                mixed[pos:end] = seg_a[pos:end]
+            else:
+                mixed[pos:end] = seg_b[pos:end]
+            pos = end
+            use_a = not use_a
+        if pos < n_samples:
+            mixed[pos:] = seg_b[pos:n_samples]
+        return mixed
+
+    def _execute_drum_roll(self,
+                           seg_a: np.ndarray,
+                           seg_b: np.ndarray,
+                           params: Dict,
+                           seg_a_stems: Optional[Dict] = None,
+                           seg_b_stems: Optional[Dict] = None) -> np.ndarray:
+        """Execute drum roll: high-pass sweep on A + repeated slice for roll, then cut to B."""
+        n_samples = min(len(seg_a), len(seg_b))
+        roll_ratio = params.get('roll_duration_ratio', 0.5)
+        roll_samples = int(n_samples * roll_ratio)
+        slice_sec = 0.5
+        slice_samples = min(int(slice_sec * self.sr), len(seg_a) // 4)
+        slice_samples = max(slice_samples, int(0.1 * self.sr))
+        if seg_a.ndim == 1:
+            seg_a = np.column_stack([seg_a, seg_a])
+        if seg_b.ndim == 1:
+            seg_b = np.column_stack([seg_b, seg_b])
+        seg_a_roll = np.zeros((n_samples, seg_a.shape[1]), dtype=seg_a.dtype)
+        loop_slice = seg_a[-slice_samples:].copy()
+        n_repeats = max(2, roll_samples // len(loop_slice) + 1)
+        repeated = np.tile(loop_slice, (n_repeats, 1))[:roll_samples]
+        if len(repeated) < roll_samples:
+            pad = np.zeros((roll_samples - len(repeated), repeated.shape[1]), dtype=repeated.dtype)
+            repeated = np.vstack([repeated, pad])
+        seg_a_roll[:roll_samples] = repeated[:roll_samples]
+        nyq = self.sr / 2
+        chunk_size = int(0.25 * self.sr)
+        for i in range(0, roll_samples, chunk_size):
+            end_idx = min(i + chunk_size, roll_samples)
+            progress = i / max(roll_samples, 1)
+            cutoff_hz = 200 + (2000 - 200) * progress
+            cutoff = min(cutoff_hz / nyq, 0.99)
+            b, a = signal.butter(2, cutoff, btype='highpass')
+            for ch in range(seg_a_roll.shape[1]):
+                chunk = seg_a_roll[i:end_idx, ch]
+                seg_a_roll[i:end_idx, ch] = signal.filtfilt(b, a, chunk)
+        vol_ramp = np.linspace(0.7, 1.0, roll_samples)
+        if vol_ramp.ndim == 1:
+            vol_ramp = vol_ramp[:, np.newaxis]
+        seg_a_roll[:roll_samples] *= vol_ramp
+        crossfade_len = n_samples - roll_samples
+        vol_a = np.ones(n_samples)
+        vol_a[roll_samples:] = np.linspace(1.0, 0.0, crossfade_len)
+        vol_b = np.zeros(n_samples)
+        vol_b[roll_samples:] = np.linspace(0.0, 1.0, crossfade_len)
+        seg_a_roll[roll_samples:] = seg_a[roll_samples:n_samples]
+        if vol_a.ndim == 1:
+            vol_a = vol_a[:, np.newaxis]
+        if vol_b.ndim == 1:
+            vol_b = vol_b[:, np.newaxis]
+        mixed = seg_a_roll * vol_a + seg_b[:n_samples] * vol_b
+        return mixed
+
+    def _execute_thematic_handoff(self,
+                                  seg_a: np.ndarray,
+                                  seg_b: np.ndarray,
+                                  params: Dict,
+                                  seg_a_stems: Optional[Dict] = None,
+                                  seg_b_stems: Optional[Dict] = None) -> np.ndarray:
+        """Execute thematic handoff: same as phrase_match (phrase-aligned blend)."""
+        return self._execute_phrase_match(seg_a, seg_b, params, seg_a_stems, seg_b_stems)

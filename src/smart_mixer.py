@@ -160,6 +160,13 @@ class SmartMixer:
                         vocal_bed_swap_enabled=super_cfg.get('vocal_bed_swap_enabled', True),
                         max_tempo_shift_pct=super_cfg.get('max_tempo_shift_pct', 0.06),
                         allow_simultaneous_vocals=super_cfg.get('allow_simultaneous_vocals', 'rare'),
+                        mix_at_level=super_cfg.get('mix_at_level', True),
+                        bpm_matching_always=super_cfg.get('bpm_matching_always', True),
+                        bpm_matching_min_diff=float(super_cfg.get('bpm_matching_min_diff', 1.0)),
+                        technique_execution_ratio=float(super_cfg.get('technique_execution_ratio', 0.45)),
+                        key_modulation_enabled=super_cfg.get('key_modulation_enabled', True),
+                        key_modulation_max_semitones=int(super_cfg.get('key_modulation_max_semitones', 2)),
+                        key_modulation_only_when_incompatible=super_cfg.get('key_modulation_only_when_incompatible', True),
                     )
             except Exception:
                 pass
@@ -1071,7 +1078,9 @@ class SmartMixer:
                               song_a_analysis: Optional[Dict] = None,
                               song_b_analysis: Optional[Dict] = None,
                               creativity_level: float = 0.6,
-                              optimize_quality: bool = True) -> np.ndarray:
+                              optimize_quality: bool = True,
+                              force_stem_orchestration: bool = False,
+                              conversation_type_override: Optional[str] = None) -> np.ndarray:
         """
         Create a SUPERHUMAN-quality mix using all advanced AI/DSP capabilities.
         
@@ -1166,7 +1175,9 @@ class SmartMixer:
                 seg_a, seg_b,
                 tempo_a, tempo_b,
                 key_a, key_b,
-                stems_a, stems_b
+                stems_a, stems_b,
+                force_stem_orchestration=force_stem_orchestration,
+                conversation_type_override=conversation_type_override
             )
             
             mixed = result['mixed']
@@ -1179,7 +1190,9 @@ class SmartMixer:
             print(f"  Confidence: {quality.get('confidence', 0):.2f}")
             print(f"  Recommendation: {quality.get('recommendation', 'unknown')}")
             
-            if 'technique' in analysis:
+            if analysis.get('mix_method') == 'stem_orchestration':
+                print(f"  Method: Stem orchestration (One Kiss beat → Hell of a Life handoff)")
+            elif 'technique' in analysis:
                 tech = analysis['technique']
                 if tech.get('type') == 'hybrid':
                     print(f"  Technique: {tech.get('name')} (hybrid)")
