@@ -1,9 +1,17 @@
 # AI DJ Mixing System
 
-A comprehensive, production-ready system for creating professional-quality DJ transitions between songs using AI models trained on expert DJ mixes. This system learns from real DJ transitions rather than using rule-based approaches, enabling it to create smooth, beat-matched, and musically intelligent mixes.
+A comprehensive, production-ready system for creating professional-quality DJ transitions between songs using AI models trained on expert DJ mixes.
+
+## Demo
+
+**Latest AI-generated mix** (Feb 2026) — listen to a sample transition created by this system:
+
+- [Latest mix: ai_dj_mix_20260201_193902.wav](data/demo/ai_dj_mix_20260201_193902.wav) — raw download
+- More mixes in [`data/old_mixes/`](data/old_mixes/) This system learns from real DJ transitions rather than using rule-based approaches, enabling it to create smooth, beat-matched, and musically intelligent mixes.
 
 ## Table of Contents
 
+- [Demo](#demo)
 - [Overview](#overview)
 - [Architecture](#architecture)
 - [Key Features](#key-features)

@@ -23,16 +23,22 @@ wheels/
 .installed.cfg
 *.egg
 
-# Audio files (not stored in repo)
+# Audio files (not stored in repo; data/old_mixes and data/demo allowed)
 *.wav
+!data/old_mixes/*.wav
+!data/demo/*.wav
 *.mp3
 *.flac
 *.m4a
 *.aac
 *.ogg
 
-# Data directories
+# Data directories (allow demo and old_mixes for GitHub)
 data/
+!data/old_mixes/
+!data/old_mixes/*.wav
+!data/demo/
+!data/demo/*.wav
 database/*.db
 database/*.db-journal
 
