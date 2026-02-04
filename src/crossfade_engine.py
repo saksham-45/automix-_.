@@ -101,6 +101,90 @@ class CrossfadeEngine:
         
         return fade_out, fade_in
     
+    def create_drum_handoff_curves(self,
+                                   n_samples: int,
+                                   tempo: float,
+                                   handoff_ratio: float = 0.25,
+                                   overlap_beats: float = 0.0,
+                                   fade_a_beats: float = 1.0,
+                                   fade_b_beats: float = 1.0) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Create beat-aligned drum handoff curves for seamless drum switch.
+        
+        A drums fade to 0 ending exactly at a downbeat. B drums start at that downbeat.
+        No overlapping drum stems = no clash. Switch on downbeat = imperceptible.
+        
+        Args:
+            n_samples: Total samples in transition
+            tempo: BPM (used to compute beat grid)
+            handoff_ratio: Approximate ratio (0-1) for when switch should occur
+            overlap_beats: 0 = hard cutover (A fully out before B). 0.5 = 1-beat overlap for smoothness
+            fade_a_beats: Beats over which A drums fade out (ending at switch point)
+            fade_b_beats: Beats over which B drums fade in (starting at switch point)
+        
+        Returns:
+            (curve_a, curve_b) - A drums out, B drums in, sequential not overlapping
+        """
+        if tempo <= 0 or tempo > 300:
+            tempo = 120.0
+        beat_duration_sec = 60.0 / tempo
+        beat_samples = int(beat_duration_sec * self.sr)
+        bar_samples = beat_samples * 4  # 4 beats per bar
+        
+        #region agent log
+        import json, os, time
+        _log_path = '/Users/saksham/automix-_./.cursor/debug.log'
+        def _dbg(msg, data):
+            try:
+                os.makedirs(os.path.dirname(_log_path), exist_ok=True)
+                with open(_log_path, 'a') as f:
+                    f.write(json.dumps({"location":"crossfade_engine.create_drum_handoff_curves","message":msg,"data":data,"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"B"}) + '\n')
+            except Exception:
+                pass
+        #endregion
+        # Find next downbeat after handoff_ratio
+        handoff_sample = int(n_samples * handoff_ratio)
+        handoff_sample = max(bar_samples, min(handoff_sample, n_samples - bar_samples))
+        # Snap to next bar boundary (downbeat)
+        bars_from_start = (handoff_sample + bar_samples - 1) // bar_samples
+        switch_sample = bars_from_start * bar_samples
+        switch_sample = min(switch_sample, n_samples - 1)
+        switch_sample = max(beat_samples, switch_sample)
+        
+        # A drums: fade out ending exactly at switch_sample
+        fade_a_samples = min(int(fade_a_beats * beat_samples), switch_sample)
+        a_fade_start = switch_sample - fade_a_samples
+        
+        curve_a = np.ones(n_samples)
+        curve_a[switch_sample:] = 0.0
+        if fade_a_samples > 0 and a_fade_start >= 0:
+            t = np.linspace(0, 1, fade_a_samples)
+            curve_a[a_fade_start:switch_sample] = 0.5 * (1 + np.cos(np.pi * t))
+        # Minimal smoothing for drums only (avoid extending overlap)
+        from scipy.ndimage import gaussian_filter1d
+        curve_a = gaussian_filter1d(np.clip(curve_a, 0, 1), sigma=min(20, max(1, fade_a_samples // 10)))
+        curve_a = np.clip(curve_a, 0, 1)
+        
+        # B drums: start at switch_sample (or slightly before if overlap_beats > 0)
+        b_start_offset = int(overlap_beats * beat_samples) if overlap_beats > 0 else 0
+        b_start_sample = max(0, switch_sample - b_start_offset)
+        fade_b_samples = min(int(fade_b_beats * beat_samples), n_samples - b_start_sample)
+        b_end_sample = min(n_samples, b_start_sample + fade_b_samples)
+        
+        curve_b = np.zeros(n_samples)
+        curve_b[:b_start_sample] = 0.0
+        curve_b[b_end_sample:] = 1.0
+        if fade_b_samples > 0 and b_end_sample > b_start_sample:
+            t = np.linspace(0, 1, fade_b_samples)
+            curve_b[b_start_sample:b_end_sample] = 0.5 * (1 - np.cos(np.pi * t))
+        curve_b = gaussian_filter1d(np.clip(curve_b, 0, 1), sigma=min(20, max(1, fade_b_samples // 10)))
+        curve_b = np.clip(curve_b, 0, 1)
+        #region agent log
+        q1 = min(int(n_samples * 0.1), len(curve_a))
+        _dbg("drum_handoff", {"n_samples": n_samples, "tempo": tempo, "switch_sample": switch_sample, "curve_a_first10pct_mean": float(np.mean(curve_a[:q1])) if q1 > 0 else 0, "curve_a_min": float(np.min(curve_a)), "curve_a_max": float(np.max(curve_a))})
+        #endregion
+        return curve_a, curve_b
+    
     def create_fast_fade(self, n_samples: int, fade_out_ratio: float = 0.25) -> np.ndarray:
         """
         Create aggressive fade curve that drops to near-zero quickly.

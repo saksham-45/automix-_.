@@ -294,7 +294,9 @@ class SuperhumanDJEngine:
                 stems_a, stems_b, recommended_conv,
                 phrase_data_a=phrase_data_a,
                 phrase_data_b=phrase_data_b,
-                segment_duration_sec=segment_duration_sec
+                segment_duration_sec=segment_duration_sec,
+                tempo_a=tempo_a,
+                tempo_b=tempo_b
             )
             
             analysis['stem_orchestration'] = {
@@ -496,18 +498,24 @@ class SuperhumanDJEngine:
             technique_executor = TechniqueExecutor(sr=self.sr)
             
             if len(selected_technique['techniques']) > 1:
+                hybrid_with_tempo = {**selected_technique}
+                params = dict(hybrid_with_tempo.get('params', {}))
+                params['tempo_a'] = tempo_a
+                params['tempo_b'] = tempo_b
+                hybrid_with_tempo['params'] = params
                 mixed = self.technique_blender.execute_hybrid(
                     seg_a_processed, seg_b_processed,
-                    selected_technique,
+                    hybrid_with_tempo,
                     stems_a, stems_b,
                     technique_executor
                 )
                 analysis['mix_method'] = 'hybrid_technique'
             else:
+                technique_params = {'tempo_a': tempo_a, 'tempo_b': tempo_b}
                 mixed = technique_executor.execute(
                     selected_technique['techniques'][0],
                     seg_a_processed, seg_b_processed,
-                    {},
+                    technique_params,
                     stems_a, stems_b
                 )
                 analysis['mix_method'] = 'single_technique'

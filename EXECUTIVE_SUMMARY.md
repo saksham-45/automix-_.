@@ -76,6 +76,20 @@ DJ Mixes → Analysis → Training Data → AI Models → Mix Creation
 - **Music Theory:** Harmonic compatibility, key relationships, structural analysis
 - **Quality Assurance:** Perceptual quality assessment, frequency clash prediction
 
+## Key Mixing Behaviors
+
+### Beat-Aligned Drum Handoff
+Drums never overlap during transitions. Song A drums fade out and Song B drums come in at a **downbeat**—the switch is timed so it’s effectively imperceptible. No double kicks, no clash.
+
+### Transition Point Selection
+- **Never in silence:** Avoids transition points in silent endings or near-silent regions
+- **Prefer vocals present:** Favors points where vocals are likely so we don't cut during long instrumental breaks
+- **Silent outro detection:** Limits search when the song’s end is very quiet
+- **In last stage, prefer gaps:** Favors brief dips between phrases (beat still playing) as natural mix points
+
+### Stem Orchestration
+Stems (drums, bass, vocals, other) are processed separately. Drum handoff uses beat alignment; vocals use phrase-aware fading; other stems use smooth crossfades. When both songs have vocals, the system varies between **bass_from_a_beat_from_b** (smooth vocal crossfade A→B), **counter_melody** (A vocals over B rhythm), **layered_reveal**, and **interweave**—avoiding the previous default of layering B vocals on A bed, which often caused clashes.
+
 ---
 
 **Bottom Line:** This project creates an AI system that learns professional DJ techniques from real mixes and applies them to create smooth, high-quality transitions between any two songs.

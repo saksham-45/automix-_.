@@ -380,33 +380,25 @@ class TechniqueExecutor:
                                    seg_b_stems: Optional[Dict] = None) -> np.ndarray:
         """
         Execute staggered stem mix: beat first, vocals later.
+        Uses beat-aligned drum handoff (no overlap) for seamless drum switch.
         """
         if seg_a_stems is None or seg_b_stems is None:
-            # Fallback to long_blend if stems not available
             return self._execute_long_blend(seg_a, seg_b, params, seg_a_stems, seg_b_stems)
         
         from src.crossfade_engine import CrossfadeEngine
         crossfade_engine = CrossfadeEngine(sr=self.sr)
         
-        # Get reference length
         n_samples = len(seg_a_stems.get('drums', seg_a))
+        tempo = 0.5 * (params.get('tempo_a', 120) + params.get('tempo_b', 120))
         
-        # Stage timing ratios
-        beat_mix_ratio = 0.2  # Song B beat starts at 20%
-        vocal_a_fade_start = 0.3  # Song A vocals start fading at 30%
-        vocal_a_fade_end = 0.7  # Song A vocals out by 70%
-        vocal_b_start = 0.5  # Song B vocals start at 50%
+        # Beat-aligned drum handoff: A out, B in at downbeat (no overlap = no clash)
+        beat_a_fade, beat_b_fade = crossfade_engine.create_drum_handoff_curves(
+            n_samples, tempo, handoff_ratio=0.2, overlap_beats=0.0
+        )
         
-        # Create multi-stage curves
-        beat_a_fade = crossfade_engine.create_multi_stage_curve(n_samples, [
-            {'start': 0.0, 'end': beat_mix_ratio, 'fade_type': 'hold', 'value': 1.0},
-            {'start': beat_mix_ratio, 'end': 1.0, 'fade_type': 'exponential', 'end_value': 0.0}
-        ])
-        
-        beat_b_fade = crossfade_engine.create_multi_stage_curve(n_samples, [
-            {'start': 0.0, 'end': beat_mix_ratio, 'fade_type': 'hold', 'value': 0.0},
-            {'start': beat_mix_ratio, 'end': 1.0, 'fade_type': 'smooth', 'end_value': 1.0}
-        ])
+        vocal_a_fade_start = 0.3
+        vocal_a_fade_end = 0.7
+        vocal_b_start = 0.5
         
         vocal_a_fade = crossfade_engine.create_multi_stage_curve(n_samples, [
             {'start': 0.0, 'end': vocal_a_fade_start, 'fade_type': 'hold', 'value': 1.0},
@@ -470,6 +462,7 @@ class TechniqueExecutor:
                                         seg_b_stems: Optional[Dict] = None) -> np.ndarray:
         """
         Execute partial stem separation: different stems transition at different times.
+        Uses beat-aligned drum handoff for seamless drum switch.
         """
         if seg_a_stems is None or seg_b_stems is None:
             return self._execute_long_blend(seg_a, seg_b, params, seg_a_stems, seg_b_stems)
@@ -478,11 +471,14 @@ class TechniqueExecutor:
         crossfade_engine = CrossfadeEngine(sr=self.sr)
         
         n_samples = len(seg_a_stems.get('drums', seg_a))
+        tempo = 0.5 * (params.get('tempo_a', 120) + params.get('tempo_b', 120))
         
-        # Different transition times for different stems
-        drums_transition_ratio = 0.2
+        # Beat-aligned drum handoff (no overlap)
+        drums_fade_a, drums_fade_b = crossfade_engine.create_drum_handoff_curves(
+            n_samples, tempo, handoff_ratio=0.2, overlap_beats=0.0
+        )
+        
         bass_transition_ratio = 0.4
-        # Vocals/other: longer fade window (35%) and moderate (cosine) curve for gentler transition
         vocals_transition_ratio = 0.35
         other_transition_ratio = 0.40
         
@@ -497,13 +493,11 @@ class TechniqueExecutor:
                 {'start': start_ratio, 'end': 1.0, 'fade_type': 'smooth', 'end_value': 0.0}
             ])
         
-        drums_fade_a = create_stem_fade(drums_transition_ratio, n_samples, use_moderate=False)
         bass_fade_a = create_stem_fade(bass_transition_ratio, n_samples, use_moderate=False)
         vocals_fade_a = create_stem_fade(vocals_transition_ratio, n_samples, use_moderate=True)
         other_fade_a = create_stem_fade(other_transition_ratio, n_samples, use_moderate=True)
         
-        # Incoming fades (inverse)
-        drums_fade_b = 1 - drums_fade_a
+        # Incoming fades (drums already from handoff curves; others inverse)
         bass_fade_b = 1 - bass_fade_a
         vocals_fade_b = 1 - vocals_fade_a
         other_fade_b = 1 - other_fade_a
@@ -551,6 +545,7 @@ class TechniqueExecutor:
                                seg_b_stems: Optional[Dict] = None) -> np.ndarray:
         """
         Execute vocal layering: keep Song A vocals with Song B beat, transition vocals later.
+        Uses beat-aligned drum handoff for seamless drum switch.
         """
         if seg_a_stems is None or seg_b_stems is None:
             return self._execute_long_blend(seg_a, seg_b, params, seg_a_stems, seg_b_stems)
@@ -559,18 +554,13 @@ class TechniqueExecutor:
         crossfade_engine = CrossfadeEngine(sr=self.sr)
         
         n_samples = len(seg_a_stems.get('drums', seg_a))
+        tempo = 0.5 * (params.get('tempo_a', 120) + params.get('tempo_b', 120))
         
-        # Song B beat comes in first, Song A vocals continue
-        beat_transition_ratio = 0.3
+        beat_a_fade, beat_b_fade = crossfade_engine.create_drum_handoff_curves(
+            n_samples, tempo, handoff_ratio=0.3, overlap_beats=0.0
+        )
+        
         vocal_transition_ratio = 0.6
-        
-        # Beat fades
-        beat_a_fade = crossfade_engine.create_multi_stage_curve(n_samples, [
-            {'start': 0.0, 'end': beat_transition_ratio, 'fade_type': 'hold', 'value': 1.0},
-            {'start': beat_transition_ratio, 'end': 1.0, 'fade_type': 'smooth', 'end_value': 0.0}
-        ])
-        
-        beat_b_fade = 1 - beat_a_fade
         
         # Vocals fade later
         vocal_a_fade = crossfade_engine.create_multi_stage_curve(n_samples, [
