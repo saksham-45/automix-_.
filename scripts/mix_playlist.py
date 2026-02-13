@@ -168,7 +168,11 @@ def fetch_playlist_video_ids(playlist_url: str) -> list[dict]:
             vid = entry.get("id")
             if not vid:
                 continue
-            entries.append({"id": vid, "title": entry.get("title", vid)})
+            entries.append({
+                "id": vid, 
+                "title": entry.get("title", vid),
+                "url": f"https://www.youtube.com/watch?v={vid}"
+            })
         return entries
     except ImportError:
         pass  # Fall back to CLI

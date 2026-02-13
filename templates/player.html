@@ -441,6 +441,9 @@
             }
         }
 
+        let overlapTimer = null;
+        const OVERLAP_MS = 300; // 300ms overlap to ensure gapless
+
         function playChunk(index) {
             if (index >= chunks.length) return;
 
@@ -452,33 +455,89 @@
 
             // Current Player
             const player = document.getElementById(currentAudioId);
-
-            // If src is not set (first play), set it. 
-            // In ping-pong, usually previous 'next' became 'current', so src is already set.
-            // But verify:
+            
+            // Set source if needed
             if (player.getAttribute('src') !== chunk.url) {
                 player.src = chunk.url;
             }
 
-            player.play().catch(e => console.log("Play error", e));
+            // Reset volume for fade-in
+            player.volume = 0;
+            player.play().then(() => {
+                // Gentle fade in
+                fadeIn(player, OVERLAP_MS);
+            }).catch(e => console.log("Play error", e));
+            
             isPlaying = true;
 
-            // Setup events
+            // Clear any existing overlap timer
+            if (overlapTimer) {
+                clearTimeout(overlapTimer);
+                overlapTimer = null;
+            }
+
+            // Setup 'ended' just in case, but we prefer scheduling
             player.onended = () => {
-                handleTrackEnd();
+                if (currentChunkIndex + 1 < chunks.length && !overlapTimer) {
+                    handleTrackEnd();
+                } else if (currentChunkIndex + 1 >= chunks.length) {
+                    isPlaying = false;
+                }
             };
 
             player.ontimeupdate = () => {
                 updateProgress(player);
+                
+                // Schedule next chunk slightly earlier than it ends to create a crossfade
+                const timeLeft = (player.duration - player.currentTime) * 1000;
+                if (timeLeft < OVERLAP_MS && !overlapTimer && currentChunkIndex + 1 < chunks.length) {
+                    console.log(`Scheduling overlap transition with ${timeLeft.toFixed(0)}ms remaining`);
+                    overlapTimer = setTimeout(() => {
+                        handleTrackEnd(player);
+                    }, Math.max(0, timeLeft - 50)); // Trigger just before ending
+                }
             };
 
-            // Preload next immediately
             preloadNext();
         }
 
-        function handleTrackEnd() {
+        function fadeIn(audio, duration) {
+            let vol = 0;
+            const step = 0.05;
+            const interval = duration / (1/step);
+            const timer = setInterval(() => {
+                vol += step;
+                if (vol >= 1) {
+                    audio.volume = 1;
+                    clearInterval(timer);
+                } else {
+                    audio.volume = vol;
+                }
+            }, interval);
+        }
+
+        function fadeOut(audio, duration) {
+            let vol = audio.volume;
+            const step = 0.05;
+            const interval = duration / (vol/step);
+            const timer = setInterval(() => {
+                vol -= step;
+                if (vol <= 0) {
+                    audio.volume = 0;
+                    audio.pause();
+                    clearInterval(timer);
+                } else {
+                    audio.volume = vol;
+                }
+            }, interval);
+        }
+
+        function handleTrackEnd(oldPlayer) {
             if (currentChunkIndex + 1 < chunks.length) {
-                // Switch players
+                // Fade out old player if provided
+                if (oldPlayer) fadeOut(oldPlayer, OVERLAP_MS);
+
+                // Switch and play next
                 currentAudioId = currentAudioId === 'audioA' ? 'audioB' : 'audioA';
                 playChunk(currentChunkIndex + 1);
             } else {

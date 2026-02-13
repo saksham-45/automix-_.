@@ -324,6 +324,26 @@ class SuperhumanDJEngine:
         print("  🌈 Stage 5: Spectral Processing...")
         stage_start = time.time()
         
+        # ---- LUFS Loudness Matching ----
+        # Match perceived loudness so transitions don't have volume dips/bumps
+        try:
+            from src.psychoacoustics import PsychoacousticAnalyzer
+            _psycho = PsychoacousticAnalyzer(sr=self.sr)
+            _seg_a_mono = np.mean(seg_a, axis=1) if seg_a.ndim > 1 else seg_a
+            _seg_b_mono = np.mean(seg_b, axis=1) if seg_b.ndim > 1 else seg_b
+            _lufs_a = _psycho.analyze_loudness_lufs(_seg_a_mono)
+            _lufs_b = _psycho.analyze_loudness_lufs(_seg_b_mono)
+            _lufs_diff = _lufs_a['integrated_lufs'] - _lufs_b['integrated_lufs']
+            _gain_db = max(-6.0, min(6.0, _lufs_diff))
+            if abs(_gain_db) > 0.5:
+                seg_b = seg_b * (10 ** (_gain_db / 20.0))
+                print(f"    ✓ Loudness matched: B adjusted by {_gain_db:+.1f} dB")
+                analysis['loudness_match'] = {'gain_db': _gain_db, 'lufs_a': _lufs_a['integrated_lufs'], 'lufs_b': _lufs_b['integrated_lufs']}
+            else:
+                print(f"    ✓ Loudness already matched (diff={_lufs_diff:.1f} dB)")
+        except Exception as e:
+            print(f"    ⚠ Loudness matching failed: {e}")
+        
         # Use original segments (spectral processing is optional enhancement)
         # Skip the heavy spectral negotiation application for now - it's slow
         seg_a_processed = seg_a

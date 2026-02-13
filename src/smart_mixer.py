@@ -26,7 +26,7 @@ from src.stem_separator import StemSeparator
 from src.technique_executor import TechniqueExecutor
 
 # Debug logging helper
-DEBUG_LOG_PATH = '/Users/saksham/untitled folder 7/.cursor/debug.log'
+DEBUG_LOG_PATH = str(Path(__file__).parent.parent / '.cursor' / 'debug.log')
 def debug_log(message, data, hypothesis_id="ALL", location=""):
     """Helper function for debug logging."""
     try:
@@ -52,7 +52,7 @@ class SmartMixer:
     
     def __init__(self, sr: int = 44100, hop_length: int = 512):
         import time, json
-        log_path = '/Users/saksham/untitled folder 7/.cursor/debug.log'
+        log_path = str(Path(__file__).parent.parent / '.cursor' / 'debug.log')
         
         #region agent log
         init_start = time.time()
@@ -360,10 +360,74 @@ class SmartMixer:
         seg_b_max = float(np.max(np.abs(seg_b)))
         seg_a_zeros = int(np.sum(np.abs(seg_a) < 0.001))
         seg_b_zeros = int(np.sum(np.abs(seg_b) < 0.001))
+        #region agent log
         with open(log_path, 'a') as f:
             f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"smart_mixer.py:230","message":"Segments extracted","data":{"seg_a_len":len(seg_a),"seg_b_len":len(seg_b),"seg_a_shape":str(seg_a.shape),"seg_b_shape":str(seg_b.shape),"seg_a_rms":seg_a_rms,"seg_b_rms":seg_b_rms,"seg_a_max":seg_a_max,"seg_b_max":seg_b_max,"seg_a_zeros":seg_a_zeros,"seg_b_zeros":seg_b_zeros},"timestamp":int(time.time()*1000)}) + '\n')
         #endregion
         
+        # ========== BEAT ALIGNMENT (Time Stretching) ==========
+        # Prevent beat drift by matching tempos during the transition
+        try:
+            tempo_a = analysis_a['tempo']
+            tempo_b = analysis_b['tempo']
+            if abs(tempo_a - tempo_b) > 1.0:
+                print(f"  ⚡ Aligning tempos: {tempo_a:.1f} vs {tempo_b:.1f} BPM")
+                
+                # Stretch the incoming track (seg_b) to match outgoing (seg_a)
+                # Or stretch both to average? Let's stretch B to match A for smoother handoff
+                rate = tempo_b / tempo_a
+                
+                # Check if rate is reasonable (don't stretch more than +/- 20%)
+                if 0.8 <= rate <= 1.2:
+                    # Time stretch seg_b
+                    # Handle stereo if needed
+                    if seg_b.ndim == 2:
+                        # Process channels independently
+                        seg_b_stretched_l = librosa.effects.time_stretch(seg_b[:, 0], rate=rate)
+                        seg_b_stretched_r = librosa.effects.time_stretch(seg_b[:, 1], rate=rate)
+                        # Ensure equal length
+                        min_len = min(len(seg_b_stretched_l), len(seg_b_stretched_r))
+                        seg_b = np.column_stack([seg_b_stretched_l[:min_len], seg_b_stretched_r[:min_len]])
+                    else:
+                        seg_b = librosa.effects.time_stretch(seg_b, rate=rate)
+                    
+                    # Truncate or pad to match seg_a length for perfect alignment
+                    target_len = len(seg_a)
+                    if len(seg_b) > target_len:
+                        seg_b = seg_b[:target_len]
+                    elif len(seg_b) < target_len:
+                        pad_width = target_len - len(seg_b)
+                        if seg_b.ndim == 2:
+                            seg_b = np.pad(seg_b, ((0, pad_width), (0, 0)))
+                        else:
+                            seg_b = np.pad(seg_b, (0, pad_width))
+                            
+                    print(f"  ✓ Song B time-stretched to match Song A (rate={rate:.3f})")
+                else:
+                    print(f"  ⚠ Tempo difference too large for stretching ({rate:.2f}x), skipping alignment")
+        except Exception as e:
+            print(f"  ⚠ Beat alignment failed: {e}")
+        
+        # ========== LOUDNESS MATCHING (LUFS) ==========
+        # Match perceived loudness of both segments so transitions don't have volume dips/bumps.
+        # This is the single most important step for professional-sounding mixes.
+        try:
+            seg_a_mono_lufs = np.mean(seg_a, axis=1) if seg_a.ndim > 1 else seg_a
+            seg_b_mono_lufs = np.mean(seg_b, axis=1) if seg_b.ndim > 1 else seg_b
+            lufs_a = self.psychoacoustics.analyze_loudness_lufs(seg_a_mono_lufs)
+            lufs_b = self.psychoacoustics.analyze_loudness_lufs(seg_b_mono_lufs)
+            lufs_diff = lufs_a['integrated_lufs'] - lufs_b['integrated_lufs']
+            # Clamp gain adjustment to ±6dB to avoid extreme corrections
+            gain_db = max(-6.0, min(6.0, lufs_diff))
+            if abs(gain_db) > 0.5:  # Only adjust if difference is audible
+                gain_linear = 10 ** (gain_db / 20.0)
+                seg_b = seg_b * gain_linear
+                print(f"  ✓ Loudness matched: Song B adjusted by {gain_db:+.1f} dB (A={lufs_a['integrated_lufs']:.1f} LUFS, B={lufs_b['integrated_lufs']:.1f} LUFS)")
+            else:
+                print(f"  ✓ Loudness already matched (diff={lufs_diff:.1f} dB)")
+        except Exception as e:
+            print(f"  ⚠ Loudness matching failed: {e}")
+
         # Initialize stems variables (for techniques that need them)
         seg_a_stems = None
         seg_b_stems = None
@@ -668,7 +732,38 @@ class SmartMixer:
             f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"ALL","location":"smart_mixer.py:395","message":"Before concatenation - final check","data":{"ctx_a_len":len(ctx_a),"mixed_len":len(mixed),"ctx_b_len":len(ctx_b),"ctx_a_rms":ctx_a_rms,"mixed_rms":mixed_rms_final,"ctx_b_rms":ctx_b_rms,"ctx_a_max":ctx_a_max,"mixed_max":mixed_max_final,"ctx_b_max":ctx_b_max,"ctx_a_duration_sec":len(ctx_a)/self.sr,"mixed_duration_sec":len(mixed)/self.sr,"ctx_b_duration_sec":len(ctx_b)/self.sr},"timestamp":int(time.time()*1000)}) + '\n')
         #endregion
 
-        final = np.concatenate([ctx_a, mixed, ctx_b], axis=0)
+        # ========== BOUNDARY CROSSFADES (eliminate clicks at splice points) ==========
+        # Instead of hard-splicing, apply short 50ms crossfades at the junctions
+        xfade_samples = min(int(0.05 * self.sr), len(ctx_a) // 2, len(mixed) // 2, len(ctx_b) // 2)  # 50ms
+        
+        if xfade_samples > 10 and len(ctx_a) > 0 and len(mixed) > 0 and len(ctx_b) > 0:
+            # Build crossfade curves
+            fade_out = np.linspace(1.0, 0.0, xfade_samples)
+            fade_in = np.linspace(0.0, 1.0, xfade_samples)
+            if ctx_a.ndim == 2:
+                fade_out_2d = fade_out[:, np.newaxis]
+                fade_in_2d = fade_in[:, np.newaxis]
+            else:
+                fade_out_2d = fade_out
+                fade_in_2d = fade_in
+            
+            # Junction 1: ctx_a → mixed
+            # Overlap last xfade_samples of ctx_a with first xfade_samples of mixed
+            overlap_1 = ctx_a[-xfade_samples:] * fade_out_2d + mixed[:xfade_samples] * fade_in_2d
+            
+            # Junction 2: mixed → ctx_b
+            overlap_2 = mixed[-xfade_samples:] * fade_out_2d + ctx_b[:xfade_samples] * fade_in_2d
+            
+            # Assemble: ctx_a (minus overlap tail) + overlap_1 + mixed (minus both ends) + overlap_2 + ctx_b (minus overlap head)
+            final = np.concatenate([
+                ctx_a[:-xfade_samples],
+                overlap_1,
+                mixed[xfade_samples:-xfade_samples] if len(mixed) > 2 * xfade_samples else np.empty((0, ctx_a.shape[1]) if ctx_a.ndim == 2 else (0,)),
+                overlap_2,
+                ctx_b[xfade_samples:]
+            ], axis=0)
+        else:
+            final = np.concatenate([ctx_a, mixed, ctx_b], axis=0)
 
         # Compute metadata for resume point in Song B (relative to y_b)
         mix_metadata: Dict = {
@@ -1276,7 +1371,25 @@ class SmartMixer:
             if mixed.ndim == 1:
                 mixed = np.column_stack([mixed, mixed])
             
-            final = np.concatenate([ctx_a, mixed, ctx_b], axis=0)
+            # ========== BOUNDARY CROSSFADES (eliminate clicks at splice points) ==========
+            xfade_samples = min(int(0.05 * self.sr), len(ctx_a) // 2, len(mixed) // 2, len(ctx_b) // 2)
+            
+            if xfade_samples > 10 and len(ctx_a) > 0 and len(mixed) > 0 and len(ctx_b) > 0:
+                fade_out = np.linspace(1.0, 0.0, xfade_samples)[:, np.newaxis]
+                fade_in = np.linspace(0.0, 1.0, xfade_samples)[:, np.newaxis]
+                
+                overlap_1 = ctx_a[-xfade_samples:] * fade_out + mixed[:xfade_samples] * fade_in
+                overlap_2 = mixed[-xfade_samples:] * fade_out + ctx_b[:xfade_samples] * fade_in
+                
+                final = np.concatenate([
+                    ctx_a[:-xfade_samples],
+                    overlap_1,
+                    mixed[xfade_samples:-xfade_samples] if len(mixed) > 2 * xfade_samples else np.empty((0, mixed.shape[1]) if mixed.ndim == 2 else (0,)),
+                    overlap_2,
+                    ctx_b[xfade_samples:]
+                ], axis=0)
+            else:
+                final = np.concatenate([ctx_a, mixed, ctx_b], axis=0)
 
             # Metadata for where to resume Song B (relative to y_b)
             mix_metadata: Dict = {
