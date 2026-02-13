@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoMix Pro</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #000000;
+            --surface: #1c1c1e;
+            --surface-Highlight: #2c2c2e;
+            --primary: #fa2d48;
+            --text-main: #ffffff;
+            --text-sec: #8e8e93;
+            --border: #38383a;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg);
+            color: var(--text-main);
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .ambient-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: -1;
+            background: radial-gradient(circle at 50% -20%, #2a1f3d, #000);
+            opacity: 0.8;
+            transition: all 1s ease;
+        }
+
+        header {
+            padding: 1.5rem 2rem;
+            display: flex;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            backdrop-filter: blur(20px);
+            background: rgba(28, 28, 30, 0.6);
+            justify-content: space-between;
+        }
+
+        h1 {
+            margin: 0;
+            font-weight: 800;
+            letter-spacing: -0.05em;
+            font-size: 1.5rem;
+        }
+
+        .input-area {
+            display: flex;
+            justify-content: center;
+            padding: 3rem 1rem;
+            transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+            z-index: 10;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+            max-width: 600px;
+        }
+
+        input {
+            flex: 1;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            color: white;
+            padding: 1rem 1.25rem;
+            border-radius: 12px;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+        }
+
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0 1.5rem;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.1s, opacity 0.2s;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .player-view {
+            display: none;
+            flex: 1;
+            flex-direction: column;
+            padding: 0 2rem 2rem;
+            max-width: 1000px;
+            margin: 0 auto;
+            width: 100%;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .now-playing {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .art-placeholder {
+            width: 200px;
+            height: 200px;
+            background: linear-gradient(135deg, #333, #444);
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 4rem;
+            animation: pulse 4s infinite alternate;
+        }
+
+        @keyframes pulse {
+            from {
+                transform: scale(1);
+            }
+
+            to {
+                transform: scale(1.02);
+            }
+        }
+
+        .track-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            max-width: 80%;
+        }
+
+        .track-status {
+            color: var(--primary);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-size: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .controls {
+            width: 100%;
+            max-width: 600px;
+            background: var(--surface);
+            padding: 1.5rem;
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin: 0 auto;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background: #333;
+            border-radius: 2px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--primary);
+            width: 0%;
+            transition: width 0.1s linear;
+        }
+
+        .queue-container {
+            flex: 1;
+            overflow-y: auto;
+            margin-top: 2rem;
+            border-top: 1px solid var(--border);
+            padding-top: 1rem;
+            max-height: 200px;
+        }
+
+        .queue-item {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem;
+            border-radius: 8px;
+            cursor: default;
+            color: var(--text-sec);
+            font-size: 0.9rem;
+            transition: background 0.2s;
+        }
+
+        .queue-item.active {
+            color: var(--text-main);
+            background: var(--surface-Highlight);
+        }
+
+        .queue-item .type-badge {
+            font-size: 0.6rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: #333;
+            margin-right: 1rem;
+            text-transform: uppercase;
+            width: 60px;
+            text-align: center;
+        }
+
+        .queue-item.active .type-badge {
+            background: var(--primary);
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="ambient-bg"></div>
+
+    <header>
+        <h1>AutoMix</h1>
+        <div style="font-size:0.8rem; opacity:0.6;">v2.0 Superhuman Engine</div>
+    </header>
+
+    <div class="input-area" id="inputSection">
+        <div class="input-group">
+            <input type="text" id="playlistUrl" placeholder="Paste YouTube Playlist URL..."
+                value="https://www.youtube.com/playlist?list=PLRBp0Fe2GpgnIh0AiYKh7o7HnYA64-SZL">
+            <button onclick="startSession()">Start Mix</button>
+        </div>
+    </div>
+
+    <div class="player-view" id="playerSection">
+        <div class="now-playing">
+            <div class="art-placeholder">🎵</div>
+            <div class="track-status" id="statusText">INITIALIZING ENGINE...</div>
+            <div class="track-title" id="trackTitle">Waiting for mix...</div>
+            <div style="font-size:0.9rem; color:var(--text-sec);" id="artistName">AutoMix AI</div>
+        </div>
+
+        <div class="controls">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div
+                style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--text-sec); margin-top:5px;">
+                <span id="currentTime">0:00</span>
+                <span id="totalTime">0:00</span>
+            </div>
+
+            <!-- Simple manual play control to satisfy browser autoplay policies -->
+            <div style="margin-top:10px; display:flex; justify-content:center;">
+                <button onclick="manualPlay()" style="min-width:120px;">Play / Resume</button>
+            </div>
+
+            <!-- Hidden Audio Elements for Gapless Playback -->
+            <audio id="audioA" preload="auto"></audio>
+            <audio id="audioB" preload="auto"></audio>
+        </div>
+
+        <div class="queue-container">
+            <div
+                style="font-size:0.8rem; color:var(--text-sec); margin-bottom:0.5rem; text-transform:uppercase; letter-spacing:0.05em;">
+                Up Next</div>
+            <div id="queueList">
+                <!-- Items go here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let sessionId = null;
+        let chunks = [];
+        let currentChunkIndex = -1;
+        let isPlaying = false;
+
+        // Gapless Engine State: Ping-Pong
+        // activePlayerId is 'audioA' or 'audioB'
+        // We start with 'audioA'
+        let currentAudioId = 'audioA';
+
+        async function startSession() {
+            const url = document.getElementById('playlistUrl').value;
+            if (!url) return;
+
+            const inputSec = document.getElementById('inputSection');
+            inputSec.style.transform = 'translateY(-20px)';
+            inputSec.style.opacity = '0';
+            setTimeout(() => {
+                inputSec.style.display = 'none';
+                document.getElementById('playerSection').style.display = 'flex';
+            }, 500);
+
+            try {
+                const res = await fetch('/api/playlist', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+
+                sessionId = data.session_id;
+                startPolling();
+
+            } catch (e) {
+                alert("Error: " + e.message);
+                location.reload();
+            }
+        }
+
+        function startPolling() {
+            setInterval(async () => {
+                if (!sessionId) return;
+                try {
+                    const res = await fetch('/api/session/' + sessionId);
+                    const data = await res.json();
+
+                    if (data.status) {
+                        document.getElementById('statusText').innerText = data.status;
+                    }
+
+                    // Add new chunks
+                    if (data.chunks && data.chunks.length > 0) {
+                        let newItems = false;
+                        data.chunks.forEach(c => {
+                            if (!chunks.find(existing => existing.id === c.id)) {
+                                chunks.push(c);
+                                newItems = true;
+                            }
+                        });
+
+                        if (newItems) {
+                            renderQueue();
+                            // If we haven't started playing at all yet, start now
+                            if (currentChunkIndex === -1 && chunks.length > 0) {
+                                playChunk(0);
+                            } else {
+                                // If playback previously ended because there was no next chunk yet,
+                                // but new chunks have arrived, automatically continue to the next one.
+                                if (!isPlaying && currentChunkIndex + 1 < chunks.length) {
+                                    playChunk(currentChunkIndex + 1);
+                                } else {
+                                    // Otherwise just keep preloading ahead
+                                    preloadNext();
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error("Poll error", e);
+                }
+            }, 2000);
+        }
+
+        function renderQueue() {
+            const list = document.getElementById('queueList');
+            list.innerHTML = chunks.map((c, i) => {
+                // Formatting Title
+                let displayTitle = c.title;
+                if (displayTitle.length > 50) displayTitle = displayTitle.substring(0, 50) + '...';
+
+                return `
+                <div class="queue-item ${i === currentChunkIndex ? 'active' : ''}" id="q-item-${i}" onclick="manualPlay(${i})">
+                    <span class="type-badge">${c.type}</span>
+                    <span style="flex:1;">${displayTitle}</span>
+                    <span style="opacity:0.5;">${c.duration.toFixed(0)}s</span>
+                    ${i === currentChunkIndex ? '<span>🔊</span>' : ''}
+                </div>
+            `}).join('');
+
+            // Auto scroll to active
+            if (currentChunkIndex > -1) {
+                const el = document.getElementById(`q-item-${currentChunkIndex}`);
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+
+        // Manual play entry point (button and queue items).
+        // This ensures playback is always triggered from a real user gesture,
+        // which avoids browser autoplay blocking.
+        function manualPlay(index) {
+            if (!chunks.length) return;
+
+            // If index was provided (clicked queue item), play that chunk
+            if (typeof index === 'number' && index >= 0 && index < chunks.length) {
+                currentAudioId = 'audioA';
+                playChunk(index);
+                return;
+            }
+
+            // No index: Play current chunk or start from first
+            if (currentChunkIndex === -1) {
+                currentAudioId = 'audioA';
+                playChunk(0);
+            } else {
+                const player = document.getElementById(currentAudioId);
+                player.play().catch(e => console.log("Manual play error", e));
+            }
+        }
+
+        function playChunk(index) {
+            if (index >= chunks.length) return;
+
+            currentChunkIndex = index;
+            renderQueue();
+
+            const chunk = chunks[index];
+            document.getElementById('trackTitle').innerText = chunk.title || "Unknown Track";
+
+            // Current Player
+            const player = document.getElementById(currentAudioId);
+
+            // If src is not set (first play), set it. 
+            // In ping-pong, usually previous 'next' became 'current', so src is already set.
+            // But verify:
+            if (player.getAttribute('src') !== chunk.url) {
+                player.src = chunk.url;
+            }
+
+            player.play().catch(e => console.log("Play error", e));
+            isPlaying = true;
+
+            // Setup events
+            player.onended = () => {
+                handleTrackEnd();
+            };
+
+            player.ontimeupdate = () => {
+                updateProgress(player);
+            };
+
+            // Preload next immediately
+            preloadNext();
+        }
+
+        function handleTrackEnd() {
+            if (currentChunkIndex + 1 < chunks.length) {
+                // Switch players
+                currentAudioId = currentAudioId === 'audioA' ? 'audioB' : 'audioA';
+                playChunk(currentChunkIndex + 1);
+            } else {
+                console.log("End of playlist reached.");
+                isPlaying = false;
+            }
+        }
+
+        function preloadNext() {
+            if (currentChunkIndex + 1 >= chunks.length) return;
+
+            const nextChunk = chunks[currentChunkIndex + 1];
+            const nextPlayerId = currentAudioId === 'audioA' ? 'audioB' : 'audioA';
+            const nextPlayer = document.getElementById(nextPlayerId);
+
+            // If not already loaded
+            if (nextPlayer.getAttribute('src') !== nextChunk.url) {
+                console.log(`Preloading ${nextChunk.title} into ${nextPlayerId}`);
+                nextPlayer.src = nextChunk.url;
+                nextPlayer.load();
+            }
+        }
+
+        function updateProgress(player) {
+            const pct = (player.currentTime / player.duration) * 100;
+            document.getElementById('progressFill').style.width = pct + '%';
+
+            const cur = formatTime(player.currentTime);
+            const tot = formatTime(player.duration || 0);
+            document.getElementById('currentTime').innerText = cur;
+            document.getElementById('totalTime').innerText = tot;
+        }
+
+        function formatTime(s) {
+            const m = Math.floor(s / 60);
+            const sec = Math.floor(s % 60);
+            return `${m}:${sec.toString().padStart(2, '0')}`;
+        }
+
+    </script>
+</body>
+
+</html>

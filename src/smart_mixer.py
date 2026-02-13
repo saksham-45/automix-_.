@@ -10,7 +10,7 @@ import json
 import time
 import os
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Union
 
 from src.smart_transition_finder import SmartTransitionFinder, TransitionPair
 from src.beat_aligner import BeatAligner
@@ -186,7 +186,8 @@ class SmartMixer:
                          transition_duration: Optional[float] = None,
                          song_a_analysis: Optional[Dict] = None,
                          song_b_analysis: Optional[Dict] = None,
-                         ai_transition_data: Optional[Dict] = None) -> np.ndarray:
+                         ai_transition_data: Optional[Dict] = None,
+                         return_metadata: bool = False) -> Union[np.ndarray, Tuple[np.ndarray, Dict]]:
         """
         Create a human-level smooth mix using all advanced modules.
         """
@@ -666,9 +667,19 @@ class SmartMixer:
         with open(log_path, 'a') as f:
             f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"ALL","location":"smart_mixer.py:395","message":"Before concatenation - final check","data":{"ctx_a_len":len(ctx_a),"mixed_len":len(mixed),"ctx_b_len":len(ctx_b),"ctx_a_rms":ctx_a_rms,"mixed_rms":mixed_rms_final,"ctx_b_rms":ctx_b_rms,"ctx_a_max":ctx_a_max,"mixed_max":mixed_max_final,"ctx_b_max":ctx_b_max,"ctx_a_duration_sec":len(ctx_a)/self.sr,"mixed_duration_sec":len(mixed)/self.sr,"ctx_b_duration_sec":len(ctx_b)/self.sr},"timestamp":int(time.time()*1000)}) + '\n')
         #endregion
-        
+
         final = np.concatenate([ctx_a, mixed, ctx_b], axis=0)
-        
+
+        # Compute metadata for resume point in Song B (relative to y_b)
+        mix_metadata: Dict = {
+            # Start of transition content in Song A snippet coordinates.
+            "a_transition_start_samples": int(ctx_a_start),
+            "a_transition_start_sec": float(ctx_a_start / self.sr),
+            # End of consumed Song B content in Song B snippet coordinates.
+            "b_resume_offset_samples": int(ctx_b_end),
+            "b_resume_offset_sec": float(ctx_b_end / self.sr),
+        }
+
         #region agent log
         final_time = time.time() - final_start
         final_rms = float(np.sqrt(np.mean(final**2))) if len(final) > 0 else 0
@@ -681,9 +692,33 @@ class SmartMixer:
         boundary_1_rms = float(np.sqrt(np.mean(final[transition_boundary_1_start:transition_boundary_1_end]**2))) if transition_boundary_1_end > transition_boundary_1_start else 0
         boundary_2_rms = float(np.sqrt(np.mean(final[transition_boundary_2_start:transition_boundary_2_end]**2))) if transition_boundary_2_end > transition_boundary_2_start else 0
         with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"ALL","location":"smart_mixer.py:407","message":"Concatenation complete - final analysis","data":{"final_len":len(final),"final_duration_sec":len(final)/self.sr,"time_sec":final_time,"final_rms":final_rms,"final_max":final_max,"boundary_1_rms":boundary_1_rms,"boundary_2_rms":boundary_2_rms,"boundary_1_max":float(np.max(np.abs(final[transition_boundary_1_start:transition_boundary_1_end]))) if transition_boundary_1_end > transition_boundary_1_start else 0,"boundary_2_max":float(np.max(np.abs(final[transition_boundary_2_start:transition_boundary_2_end]))) if transition_boundary_2_end > transition_boundary_2_start else 0},"timestamp":int(time.time()*1000)}) + '\n')
+            f.write(json.dumps({
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "ALL",
+                "location": "smart_mixer.py:407",
+                "message": "Concatenation complete - final analysis",
+                "data": {
+                    "final_len": len(final),
+                    "final_duration_sec": len(final) / self.sr,
+                    "time_sec": final_time,
+                    "final_rms": final_rms,
+                    "final_max": final_max,
+                    "boundary_1_rms": boundary_1_rms,
+                    "boundary_2_rms": boundary_2_rms,
+                    "boundary_1_max": float(np.max(np.abs(final[transition_boundary_1_start:transition_boundary_1_end]))) if transition_boundary_1_end > transition_boundary_1_start else 0,
+                    "boundary_2_max": float(np.max(np.abs(final[transition_boundary_2_start:transition_boundary_2_end]))) if transition_boundary_2_end > transition_boundary_2_start else 0,
+                    "a_transition_start_samples": mix_metadata["a_transition_start_samples"],
+                    "a_transition_start_sec": mix_metadata["a_transition_start_sec"],
+                    "b_resume_offset_samples": mix_metadata["b_resume_offset_samples"],
+                    "b_resume_offset_sec": mix_metadata["b_resume_offset_sec"],
+                },
+                "timestamp": int(time.time() * 1000)
+            }) + '\n')
         #endregion
-        
+
+        if return_metadata:
+            return final, mix_metadata
         return final
     
     def _analyze_song_fast(self, y: np.ndarray, existing_analysis: Optional[Dict] = None) -> Dict:
@@ -1080,7 +1115,8 @@ class SmartMixer:
                               creativity_level: float = 0.6,
                               optimize_quality: bool = True,
                               force_stem_orchestration: bool = False,
-                              conversation_type_override: Optional[str] = None) -> np.ndarray:
+                              conversation_type_override: Optional[str] = None,
+                              return_metadata: bool = False) -> Union[np.ndarray, Tuple[np.ndarray, Dict]]:
         """
         Create a SUPERHUMAN-quality mix using all advanced AI/DSP capabilities.
         
@@ -1114,8 +1150,15 @@ class SmartMixer:
                         ai_data = trans
             except Exception:
                 pass
-            return self.create_smooth_mix(song_a_path, song_b_path, transition_duration,
-                                         song_a_analysis, song_b_analysis, ai_transition_data=ai_data)
+            return self.create_smooth_mix(
+                song_a_path,
+                song_b_path,
+                transition_duration,
+                song_a_analysis,
+                song_b_analysis,
+                ai_transition_data=ai_data,
+                return_metadata=return_metadata,
+            )
         
         print("\n" + "="*60)
         print("🚀 SUPERHUMAN MIXING ENGINE")
@@ -1234,11 +1277,23 @@ class SmartMixer:
                 mixed = np.column_stack([mixed, mixed])
             
             final = np.concatenate([ctx_a, mixed, ctx_b], axis=0)
+
+            # Metadata for where to resume Song B (relative to y_b)
+            mix_metadata: Dict = {
+                # Start of transition content in Song A snippet coordinates.
+                "a_transition_start_samples": int(ctx_a_start),
+                "a_transition_start_sec": float(ctx_a_start / self.sr),
+                # End of consumed Song B content in Song B snippet coordinates.
+                "b_resume_offset_samples": int(ctx_b_end),
+                "b_resume_offset_sec": float(ctx_b_end / self.sr),
+            }
             
             total_time = time.time() - start_time
             print(f"\n✅ Superhuman mix complete in {total_time:.1f}s")
             print(f"   Output duration: {len(final)/self.sr:.1f}s")
             
+            if return_metadata:
+                return final, mix_metadata
             return final
         except Exception as e:
             print(f"  ⚠ Superhuman path failed: {e}")
@@ -1252,5 +1307,12 @@ class SmartMixer:
                         ai_data = trans
             except Exception:
                 pass
-            return self.create_smooth_mix(song_a_path, song_b_path, transition_duration,
-                                         song_a_analysis, song_b_analysis, ai_transition_data=ai_data)
+            return self.create_smooth_mix(
+                song_a_path,
+                song_b_path,
+                transition_duration,
+                song_a_analysis,
+                song_b_analysis,
+                ai_transition_data=ai_data,
+                return_metadata=return_metadata,
+            )        

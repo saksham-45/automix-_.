@@ -155,6 +155,7 @@ def fetch_playlist_video_ids(playlist_url: str) -> list[dict]:
             "quiet": True,
             "extract_flat": True,
             "skip_download": True,
+            "socket_timeout": 10,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(playlist_url, download=False)
@@ -186,8 +187,8 @@ def fetch_playlist_video_ids(playlist_url: str) -> list[dict]:
         timeout=60,
     )
     if result.returncode != 0:
-        print("✗ Failed to fetch playlist. Install yt-dlp: brew install yt-dlp (or pip install yt-dlp in a venv)")
-        sys.exit(1)
+        print(f"✗ Failed to fetch playlist: {result.stderr}")
+        raise RuntimeError("Failed to fetch playlist video IDs")
     entries = []
     for line in (result.stdout or "").strip().splitlines():
         line = line.strip()

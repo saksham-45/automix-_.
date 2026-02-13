@@ -44,13 +44,15 @@ def download_youtube_audio(url: str, output_path: Path,
     # First download, then trim with ffmpeg for more reliable duration limiting
     temp_output = output_path.parent / f"temp_{output_path.name}"
     
-    # Use yt-dlp to download audio
+    # Use yt-dlp to download audio.
+    # Use android player_client to avoid SABR streaming issues on YouTube.
     cmd = [
         'yt-dlp',
         '-x',  # Extract audio
         '--audio-format', 'wav',
         '--audio-quality', '0',  # Best quality
         '--no-playlist',
+        '--extractor-args', 'youtube:player_client=android',
         '-o', str(temp_output).replace('.wav', '.%(ext)s'),
         url
     ]
