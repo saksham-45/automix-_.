@@ -193,6 +193,21 @@ class HybridTechniqueBlender:
                 'techniques': ['long_blend', 'vocal_layering', 'bass_swap'],
                 'weights': [0.35, 0.35, 0.3],
                 'description': 'Deep, hypnotic transition'
+            },
+            'vocal_safe_handoff': {
+                'techniques': ['phrase_match', 'staggered_stem_mix', 'echo_out'],
+                'weights': [0.45, 0.35, 0.2],
+                'description': 'Phrase-aware handoff with reduced vocal collision risk'
+            },
+            'low_end_guard': {
+                'techniques': ['bass_swap', 'long_blend', 'phrase_match'],
+                'weights': [0.4, 0.35, 0.25],
+                'description': 'Protects low-end clarity while preserving phrase continuity'
+            },
+            'percussive_bridge': {
+                'techniques': ['drum_roll', 'filter_sweep', 'bass_swap'],
+                'weights': [0.4, 0.35, 0.25],
+                'description': 'Percussive build then controlled spectral handoff'
             }
         }
     
@@ -611,6 +626,7 @@ class HybridTechniqueBlender:
         tempo_diff = context.get('tempo_diff', 0)
         has_vocals_a = context.get('has_vocals_a', False)
         has_vocals_b = context.get('has_vocals_b', False)
+        vocal_overlap_risk = float(context.get('vocal_overlap_risk', 0.5))
         section_a = context.get('section_a', '')
         section_b = context.get('section_b', '')
         
@@ -625,14 +641,45 @@ class HybridTechniqueBlender:
         # Often pick a preset for real variety (not just crossfade-heavy combos)
         preset_names = list(self.hybrid_presets.keys())
         use_preset_prob = 0.35 + creativity_level * 0.25  # 0.35–0.6
+        high_vocal_risk = vocal_overlap_risk >= 0.65
+        if high_vocal_risk:
+            # Prefer deterministic vocal-safe combinations when overlap risk is high.
+            use_preset_prob = max(0.2, use_preset_prob - 0.2)
         if random.random() < use_preset_prob:
-            # Slight context bias: building -> festival_drop more likely; stable -> smooth_operator
+            # Slight context bias: building favors festival/percussive, stable favors smooth/vocal-safe.
+            weights_by_preset = {name: 1.0 for name in preset_names}
             if energy_direction == 'building':
-                weights_preset = [0.15, 0.45, 0.15, 0.15, 0.1]   # festival_drop boosted
+                for name, weight in {
+                    'festival_drop': 2.2,
+                    'percussive_bridge': 1.8,
+                    'creative_chaos': 1.2
+                }.items():
+                    if name in weights_by_preset:
+                        weights_by_preset[name] = weight
             elif energy_direction == 'fading':
-                weights_preset = [0.35, 0.1, 0.2, 0.2, 0.15]     # cinematic_blend, creative_chaos
+                for name, weight in {
+                    'cinematic_blend': 2.0,
+                    'deep_immersion': 1.5,
+                    'vocal_safe_handoff': 1.3
+                }.items():
+                    if name in weights_by_preset:
+                        weights_by_preset[name] = weight
             else:
-                weights_preset = [0.2, 0.15, 0.35, 0.15, 0.15]   # smooth_operator boosted
+                for name, weight in {
+                    'smooth_operator': 2.1,
+                    'vocal_safe_handoff': 1.8,
+                    'low_end_guard': 1.6
+                }.items():
+                    if name in weights_by_preset:
+                        weights_by_preset[name] = weight
+            if high_vocal_risk:
+                for risky in ('creative_chaos', 'deep_immersion'):
+                    if risky in weights_by_preset:
+                        weights_by_preset[risky] *= 0.5
+                for safer in ('vocal_safe_handoff', 'low_end_guard', 'smooth_operator'):
+                    if safer in weights_by_preset:
+                        weights_by_preset[safer] *= 1.35
+            weights_preset = [weights_by_preset[name] for name in preset_names]
             preset_name = random.choices(preset_names, weights=weights_preset, k=1)[0]
             hybrid = self.get_preset_hybrid(preset_name)
             if hybrid is not None:
@@ -640,13 +687,22 @@ class HybridTechniqueBlender:
                 return hybrid
         
         # Rule-based but varied: randomize which techniques we add (avoid same trio every time)
-        base_options = {
-            'building': ['energy_build', 'drop_mix', 'double_drop', 'filter_sweep', 'drum_roll'],
-            'fading': ['echo_out', 'filter_sweep', 'drop_mix', 'bass_swap'],
-            'stable': ['long_blend', 'bass_swap', 'staggered_stem_mix', 'phrase_match', 'vocal_layering', 'loop_transition', 'back_and_forth', 'thematic_handoff']
-        }
-        secondary_pool = ['bass_swap', 'filter_sweep', 'staggered_stem_mix', 'vocal_layering', 'phrase_match', 'drop_mix', 'energy_build', 'loop_transition']
-        bold_options = ['quick_cut', 'backspin', 'double_drop', 'drop_mix', 'drop_on_the_one', 'drum_roll']
+        if high_vocal_risk:
+            base_options = {
+                'building': ['phrase_match', 'staggered_stem_mix', 'bass_swap', 'filter_sweep', 'energy_build'],
+                'fading': ['echo_out', 'filter_sweep', 'phrase_match', 'bass_swap'],
+                'stable': ['phrase_match', 'staggered_stem_mix', 'long_blend', 'bass_swap', 'loop_transition', 'thematic_handoff']
+            }
+            secondary_pool = ['phrase_match', 'staggered_stem_mix', 'bass_swap', 'filter_sweep', 'echo_out', 'loop_transition']
+            bold_options = ['drum_roll', 'drop_on_the_one', 'quick_cut']
+        else:
+            base_options = {
+                'building': ['energy_build', 'drop_mix', 'double_drop', 'filter_sweep', 'drum_roll'],
+                'fading': ['echo_out', 'filter_sweep', 'drop_mix', 'bass_swap'],
+                'stable': ['long_blend', 'bass_swap', 'staggered_stem_mix', 'phrase_match', 'vocal_layering', 'loop_transition', 'back_and_forth', 'thematic_handoff']
+            }
+            secondary_pool = ['bass_swap', 'filter_sweep', 'staggered_stem_mix', 'vocal_layering', 'phrase_match', 'drop_mix', 'energy_build', 'loop_transition']
+            bold_options = ['quick_cut', 'backspin', 'double_drop', 'drop_mix', 'drop_on_the_one', 'drum_roll']
         
         chosen_techniques = []
         pool = base_options.get(energy_direction, base_options['stable'])
@@ -662,7 +718,10 @@ class HybridTechniqueBlender:
         
         # Add one context-aware secondary (varied, not always filter_sweep + staggered_stem_mix)
         if has_vocals_a and has_vocals_b and random.random() < 0.6:
-            add = random.choice(['staggered_stem_mix', 'vocal_layering', 'phrase_match'])
+            if high_vocal_risk:
+                add = random.choice(['staggered_stem_mix', 'phrase_match', 'bass_swap'])
+            else:
+                add = random.choice(['staggered_stem_mix', 'vocal_layering', 'phrase_match'])
         elif harmonic < 0.6 and random.random() < 0.5:
             add = 'bass_swap'
         elif tempo_diff > 3 and random.random() < 0.5:
@@ -671,9 +730,16 @@ class HybridTechniqueBlender:
             add = random.choice(secondary_pool)
         if add not in chosen_techniques:
             chosen_techniques.append(add)
+
+        if vocal_overlap_risk >= 0.75 and 'phrase_match' not in chosen_techniques:
+            if len(chosen_techniques) >= 3:
+                chosen_techniques[-1] = 'phrase_match'
+            else:
+                chosen_techniques.append('phrase_match')
         
         # Sometimes add a bold technique for variety (not just safe crossfade)
-        if creativity_level > 0.4 and random.random() < 0.4:
+        bold_prob = 0.15 if high_vocal_risk else 0.4
+        if creativity_level > 0.4 and random.random() < bold_prob:
             bold = random.choice(bold_options)
             if bold not in chosen_techniques:
                 chosen_techniques.append(bold)

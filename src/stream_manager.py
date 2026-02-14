@@ -211,6 +211,7 @@ class StreamSession:
                 a_transition_start_in_snippet = 0
                 b_resume_offset_samples = 0
                 mixed = None
+                mix_meta = {}
 
                 # Mix
                 try:
@@ -248,6 +249,14 @@ class StreamSession:
                     mixed, a_transition_start_in_snippet, b_resume_offset_samples = self._build_fallback_transition(
                         snippet_a, snippet_b
                     )
+                    mix_meta = {
+                        "mix_method": "fallback_crossfade",
+                        "technique_name": "equal_power_crossfade",
+                        "a_transition_start_samples": int(a_transition_start_in_snippet),
+                        "a_transition_start_sec": float(a_transition_start_in_snippet / SR),
+                        "b_resume_offset_samples": int(b_resume_offset_samples),
+                        "b_resume_offset_sec": float(b_resume_offset_samples / SR),
+                    }
 
                 # --- Produce "Main Body" of Current Song ---
                 # End body exactly where transition content starts in Song A.
@@ -285,7 +294,8 @@ class StreamSession:
                         "type": "transition",
                         "path": str(trans_path),
                         "duration": len(mixed)/SR,
-                        "title": f"Mix: {current_item['title']} → {next_item['title']}"
+                        "title": f"Mix: {current_item['title']} → {next_item['title']}",
+                        "metadata": mix_meta
                     })
 
                 # Shift

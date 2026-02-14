@@ -73,6 +73,10 @@ class SuperhumanDJEngine:
             'avoid_consecutive_stem_orchestration': True,
             'technique_diversity_lookback': 4,
             'technique_diversity_attempts': 4,
+            # Vocal clash controls
+            'avoid_high_risk_vocal_techniques': True,
+            'vocal_overlap_soft_guard': 0.55,
+            'vocal_overlap_hard_guard': 0.75,
             # Key modulation: pitch-shift A/B so they match or sit in compatible key (A/B material only)
             'key_modulation_enabled': True,
             'key_modulation_max_semitones': 2,
@@ -203,6 +207,9 @@ class SuperhumanDJEngine:
         # ==================== STAGE 2: TECHNIQUE SELECTION ====================
         print("  🎨 Stage 2: Creative Technique Selection...")
         stage_start = time.time()
+
+        vocal_overlap_risk = self._estimate_vocal_overlap_risk(stems_a, stems_b)
+        analysis['vocal_overlap_risk_estimate'] = vocal_overlap_risk
         
         context = {
             'harmonic_compatibility': 1.0 - frequency_negotiation.get('overall_conflict', 0.0),
@@ -210,7 +217,8 @@ class SuperhumanDJEngine:
             'energy_b': float(np.sqrt(np.mean(seg_b ** 2))) * 10,
             'tempo_diff': abs(tempo_a - tempo_b),
             'has_vocals_a': stems_a is not None and 'vocals' in stems_a,
-            'has_vocals_b': stems_b is not None and 'vocals' in stems_b
+            'has_vocals_b': stems_b is not None and 'vocals' in stems_b,
+            'vocal_overlap_risk': vocal_overlap_risk
         }
 
         if self.config['enable_hybrid_techniques']:
@@ -239,6 +247,10 @@ class SuperhumanDJEngine:
             selected_technique,
             context
         )
+        selected_technique, vocal_guard_note = self._guard_against_vocal_clash(
+            selected_technique,
+            context
+        )
 
         if len(selected_technique.get('techniques', [])) > 1:
             analysis['technique'] = {
@@ -256,6 +268,8 @@ class SuperhumanDJEngine:
             }
         if diversity_note:
             analysis['technique']['diversity_note'] = diversity_note
+        if vocal_guard_note:
+            analysis['technique']['vocal_guard_note'] = vocal_guard_note
         
         analysis['timings']['technique_selection'] = time.time() - stage_start
         analysis['stages'].append('technique_selected')
@@ -647,6 +661,128 @@ class SuperhumanDJEngine:
                 return alt, f"diversity override: avoided repeated '{current_primary}'"
 
         return selected_technique, None
+
+    def _guard_against_vocal_clash(self,
+                                   selected_technique: Dict,
+                                   context: Dict) -> Tuple[Dict, Optional[str]]:
+        """
+        Remove high-risk vocal-collision techniques when overlap risk is high.
+        """
+        if not bool(self.config.get('avoid_high_risk_vocal_techniques', True)):
+            return selected_technique, None
+
+        soft_guard = float(self.config.get('vocal_overlap_soft_guard', 0.55))
+        hard_guard = float(self.config.get('vocal_overlap_hard_guard', 0.75))
+        risk = float(context.get('vocal_overlap_risk', 0.5))
+        if risk < soft_guard:
+            return selected_technique, None
+
+        techniques = list(selected_technique.get('techniques', [])) if isinstance(selected_technique, dict) else []
+        if not techniques:
+            return selected_technique, None
+
+        unsafe = {'vocal_layering', 'back_and_forth', 'acapella_overlay'}
+        filtered = [t for t in techniques if t not in unsafe]
+        removed = [t for t in techniques if t in unsafe]
+
+        if risk >= hard_guard and 'phrase_match' not in filtered:
+            filtered.insert(0, 'phrase_match')
+        if 'staggered_stem_mix' not in filtered:
+            filtered.append('staggered_stem_mix')
+
+        if not filtered:
+            if risk >= hard_guard:
+                filtered = ['phrase_match', 'bass_swap']
+            else:
+                filtered = ['staggered_stem_mix', 'bass_swap']
+
+        deduped = []
+        for technique in filtered:
+            if technique not in deduped:
+                deduped.append(technique)
+        deduped = deduped[:3]
+
+        if deduped == techniques:
+            return selected_technique, None
+
+        output = {**selected_technique}
+        output['techniques'] = deduped
+
+        old_weights = selected_technique.get('weights', [])
+        new_weights: List[float] = []
+        if isinstance(old_weights, list) and len(old_weights) == len(techniques):
+            weight_by_technique: Dict[str, float] = {}
+            for technique, weight in zip(techniques, old_weights):
+                try:
+                    weight_by_technique[technique] = weight_by_technique.get(technique, 0.0) + float(weight)
+                except Exception:
+                    continue
+            new_weights = [max(0.01, weight_by_technique.get(t, 0.0)) for t in deduped]
+
+        if len(new_weights) != len(deduped) or sum(new_weights) <= 0:
+            new_weights = [1.0 / len(deduped)] * len(deduped)
+        else:
+            total = float(sum(new_weights))
+            new_weights = [w / total for w in new_weights]
+        output['weights'] = new_weights
+
+        note = (
+            f"vocal clash guard: risk={risk:.2f}, "
+            f"removed={removed if removed else 'none'}, selected={deduped}"
+        )
+        return output, note
+
+    def _estimate_vocal_overlap_risk(self,
+                                     stems_a: Optional[Dict],
+                                     stems_b: Optional[Dict]) -> float:
+        """
+        Estimate how likely two vocal stems are to collide during overlap.
+        """
+        try:
+            if stems_a is None or stems_b is None:
+                return 0.5
+            if 'vocals' not in stems_a or 'vocals' not in stems_b:
+                return 0.5
+
+            vocals_a = stems_a['vocals']
+            vocals_b = stems_b['vocals']
+            if vocals_a is None or vocals_b is None or len(vocals_a) == 0 or len(vocals_b) == 0:
+                return 0.5
+
+            if vocals_a.ndim > 1:
+                vocals_a = np.mean(vocals_a, axis=1)
+            if vocals_b.ndim > 1:
+                vocals_b = np.mean(vocals_b, axis=1)
+
+            n_samples = min(len(vocals_a), len(vocals_b))
+            if n_samples < int(0.5 * self.sr):
+                return 0.5
+            vocals_a = vocals_a[:n_samples]
+            vocals_b = vocals_b[:n_samples]
+
+            import librosa
+            frame_length = max(256, int(0.05 * self.sr))
+            hop_length = max(128, frame_length // 2)
+            rms_a = librosa.feature.rms(y=vocals_a, frame_length=frame_length, hop_length=hop_length)[0]
+            rms_b = librosa.feature.rms(y=vocals_b, frame_length=frame_length, hop_length=hop_length)[0]
+            if len(rms_a) == 0 or len(rms_b) == 0:
+                return 0.5
+
+            n_frames = min(len(rms_a), len(rms_b))
+            rms_a = rms_a[:n_frames]
+            rms_b = rms_b[:n_frames]
+
+            threshold_a = max(float(np.percentile(rms_a, 45)) * 0.8, float(np.mean(rms_a)) * 0.5, 1e-7)
+            threshold_b = max(float(np.percentile(rms_b, 45)) * 0.8, float(np.mean(rms_b)) * 0.5, 1e-7)
+            active_a = rms_a >= threshold_a
+            active_b = rms_b >= threshold_b
+
+            simultaneous = float(np.mean(active_a & active_b))
+            activity_floor = float(min(np.mean(active_a), np.mean(active_b)))
+            risk = 0.65 * simultaneous + 0.35 * activity_floor
+            return float(np.clip(risk, 0, 1))
+        except Exception:
+            return 0.5
     
     # ==================== INDIVIDUAL ENHANCEMENTS ====================
     

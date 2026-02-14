@@ -24,6 +24,8 @@ class TransitionPoint:
     structural_label: str  # 'intro', 'verse', 'chorus', 'breakdown', 'outro', 'unknown'
     score: float  # Overall quality score
     beat_position: int  # Beat number at this point
+    vocal_presence: float = 0.5  # 0-1 proxy for vocal density at this point
+    at_gap: bool = False  # True if point lands in a short phrase gap
 
 
 @dataclass
@@ -218,7 +220,9 @@ class SmartTransitionFinder:
                     energy_trend=trend,
                     structural_label=label,
                     score=float(score),
-                    beat_position=beat_pos
+                    beat_position=beat_pos,
+                    vocal_presence=vocal_presence,
+                    at_gap=at_gap
                 ))
         
         # Sort by score (best first)
@@ -370,11 +374,13 @@ class SmartTransitionFinder:
         score = 0.5  # Base score
         
         if is_outgoing:
-            # Prefer points where vocals are present (don't pick purely instrumental when vocals exist)
-            if vocal_presence > 0.35:
-                score += 0.2
-            elif vocal_presence > 0.25:
-                score += 0.1
+            # Prefer cleaner outgoing regions to reduce vocal-on-vocal clashes.
+            if vocal_presence < 0.20:
+                score += 0.22
+            elif vocal_presence < 0.32:
+                score += 0.12
+            elif vocal_presence > 0.58:
+                score -= 0.16
             # In last stage: prefer gaps (brief dip between phrases, beat still playing) - natural mix point
             if in_last_stage and at_gap and energy > 0.05:
                 score += 0.25  # Gap when beat playing = ideal
@@ -395,6 +401,12 @@ class SmartTransitionFinder:
                 score += 0.2
             if 0.3 < energy < 0.8:  # Not too quiet, not too loud
                 score += 0.2
+            if 0.18 <= vocal_presence <= 0.52:
+                score += 0.08
+            elif vocal_presence > 0.72:
+                score -= 0.10
+            if at_gap and energy > 0.05:
+                score += 0.08
             # Slight preference for structural sections (intro/build/drop) regardless of position
             if label in ['intro', 'build', 'drop']:
                 score += 0.1  # Bonus for structural sections anywhere in song
@@ -426,6 +438,17 @@ class SmartTransitionFinder:
         # Key compatibility
         if key_a and key_b and self._keys_compatible(key_a, key_b):
             score += 0.2
+
+        # Vocal clash guard: penalize pairs where both points are vocal-dense.
+        vocal_pair = float(point_a.vocal_presence * point_b.vocal_presence)
+        if vocal_pair > 0.22:
+            score -= min(0.28, vocal_pair * 0.35)
+        elif point_a.vocal_presence < 0.30 and point_b.vocal_presence < 0.45:
+            score += 0.05
+
+        # Phrase-gap bonus for smoother handoffs.
+        if point_a.at_gap or point_b.at_gap:
+            score += 0.05
         
         # Energy flow (outgoing should fade, incoming should rise)
         if point_a.energy_trend in ['falling', 'dip'] and point_b.energy_trend == 'rising':
@@ -659,12 +682,12 @@ class SmartTransitionFinder:
         # Weighted quality score
         weights = {
             'harmonic_compatibility': 0.20,
-            'energy_compatibility': 0.15,
-            'structural_compatibility': 0.15,
-            'tempo_phase_match': 0.20,
-            'spectral_clash_risk': 0.15,  # Lower is better
-            'vocal_overlap_risk': 0.10,   # Lower is better
-            'beat_alignment_quality': 0.05
+            'energy_compatibility': 0.14,
+            'structural_compatibility': 0.14,
+            'tempo_phase_match': 0.16,
+            'spectral_clash_risk': 0.12,  # Lower is better
+            'vocal_overlap_risk': 0.20,   # Lower is better
+            'beat_alignment_quality': 0.04
         }
         
         overall = sum(
@@ -831,10 +854,16 @@ class SmartTransitionFinder:
             vocal_a = (rolloff_a_norm + zcr_a_norm) / 2
             vocal_b = (rolloff_b_norm + zcr_b_norm) / 2
             
-            # Overlap risk: both have vocals
-            overlap_risk = vocal_a * vocal_b
+            # Combine local spectral proxy with candidate-level vocal-density signal.
+            proxy_overlap = vocal_a * vocal_b
+            point_overlap = float(np.clip(point_a.vocal_presence * point_b.vocal_presence, 0, 1))
+            overlap_risk = 0.45 * proxy_overlap + 0.55 * point_overlap
+            if point_a.at_gap or point_b.at_gap:
+                overlap_risk *= 0.85
             
             return float(np.clip(overlap_risk, 0, 1))
         except:
-            return 0.5  # Fallback
-
+            fallback = float(np.clip(point_a.vocal_presence * point_b.vocal_presence, 0, 1))
+            if point_a.at_gap or point_b.at_gap:
+                fallback *= 0.85
+            return float(np.clip(fallback, 0, 1))

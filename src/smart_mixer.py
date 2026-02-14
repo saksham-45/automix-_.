@@ -167,6 +167,9 @@ class SmartMixer:
                         avoid_consecutive_stem_orchestration=bool(super_cfg.get('avoid_consecutive_stem_orchestration', True)),
                         technique_diversity_lookback=int(super_cfg.get('technique_diversity_lookback', 4)),
                         technique_diversity_attempts=int(super_cfg.get('technique_diversity_attempts', 4)),
+                        avoid_high_risk_vocal_techniques=bool(super_cfg.get('avoid_high_risk_vocal_techniques', True)),
+                        vocal_overlap_soft_guard=float(super_cfg.get('vocal_overlap_soft_guard', 0.55)),
+                        vocal_overlap_hard_guard=float(super_cfg.get('vocal_overlap_hard_guard', 0.75)),
                         key_modulation_enabled=super_cfg.get('key_modulation_enabled', True),
                         key_modulation_max_semitones=int(super_cfg.get('key_modulation_max_semitones', 2)),
                         key_modulation_only_when_incompatible=super_cfg.get('key_modulation_only_when_incompatible', True),
@@ -1394,6 +1397,12 @@ class SmartMixer:
             else:
                 final = np.concatenate([ctx_a, mixed, ctx_b], axis=0)
 
+            technique_meta = analysis.get('technique', {}) if isinstance(analysis, dict) else {}
+            if technique_meta.get('type') == 'hybrid':
+                technique_name = technique_meta.get('name') or '+'.join(technique_meta.get('techniques', []))
+            else:
+                technique_name = technique_meta.get('name')
+
             # Metadata for where to resume Song B (relative to y_b)
             mix_metadata: Dict = {
                 # Start of transition content in Song A snippet coordinates.
@@ -1402,6 +1411,11 @@ class SmartMixer:
                 # End of consumed Song B content in Song B snippet coordinates.
                 "b_resume_offset_samples": int(ctx_b_end),
                 "b_resume_offset_sec": float(ctx_b_end / self.sr),
+                # Transition diagnostics
+                "mix_method": analysis.get('mix_method', 'unknown'),
+                "technique_name": technique_name,
+                "vocal_overlap_risk_estimate": analysis.get('vocal_overlap_risk_estimate'),
+                "vocal_guard_note": technique_meta.get('vocal_guard_note'),
             }
             
             total_time = time.time() - start_time

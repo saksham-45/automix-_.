@@ -121,6 +121,10 @@ superhuman:
   # Technique diversity memory for superhuman transitions
   technique_diversity_lookback: 4
   technique_diversity_attempts: 4
+  # Vocal clash guardrails
+  avoid_high_risk_vocal_techniques: true
+  vocal_overlap_soft_guard: 0.55
+  vocal_overlap_hard_guard: 0.75
   # When true, always use stem orchestration (One Kiss beat → Hell of a Life beat handoff) instead of hybrid techniques
   force_stem_orchestration: false
   # Override stem conversation type: null = use recommended, or e.g. "bass_from_a_beat_from_b" (keep A bass, B beat)
