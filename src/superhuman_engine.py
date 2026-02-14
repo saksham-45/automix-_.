@@ -68,12 +68,19 @@ class SuperhumanDJEngine:
             'bpm_matching_always': True,
             'bpm_matching_min_diff': 1.0,
             # Use selected technique (filter_sweep, drop_mix, etc.) this fraction of the time instead of stem crossfade
-            'technique_execution_ratio': 0.45,
+            'technique_execution_ratio': 0.62,
+            # Diversity controls
+            'avoid_consecutive_stem_orchestration': True,
+            'technique_diversity_lookback': 4,
+            'technique_diversity_attempts': 4,
             # Key modulation: pitch-shift A/B so they match or sit in compatible key (A/B material only)
             'key_modulation_enabled': True,
             'key_modulation_max_semitones': 2,
             'key_modulation_only_when_incompatible': True,
         }
+        # Session-local diversity memory
+        self._recent_mix_methods: List[str] = []
+        self._recent_primary_techniques: List[str] = []
     
     def configure(self, **kwargs):
         """Update engine configuration."""
@@ -197,17 +204,17 @@ class SuperhumanDJEngine:
         print("  🎨 Stage 2: Creative Technique Selection...")
         stage_start = time.time()
         
+        context = {
+            'harmonic_compatibility': 1.0 - frequency_negotiation.get('overall_conflict', 0.0),
+            'energy_a': float(np.sqrt(np.mean(seg_a ** 2))) * 10,
+            'energy_b': float(np.sqrt(np.mean(seg_b ** 2))) * 10,
+            'tempo_diff': abs(tempo_a - tempo_b),
+            'has_vocals_a': stems_a is not None and 'vocals' in stems_a,
+            'has_vocals_b': stems_b is not None and 'vocals' in stems_b
+        }
+
         if self.config['enable_hybrid_techniques']:
             # Use context to suggest creative technique
-            context = {
-                'harmonic_compatibility': 1.0 - frequency_negotiation.get('overall_conflict', 0.0),
-                'energy_a': float(np.sqrt(np.mean(seg_a ** 2))) * 10,
-                'energy_b': float(np.sqrt(np.mean(seg_b ** 2))) * 10,
-                'tempo_diff': abs(tempo_a - tempo_b),
-                'has_vocals_a': stems_a is not None and 'vocals' in stems_a,
-                'has_vocals_b': stems_b is not None and 'vocals' in stems_b
-            }
-            
             suggested_hybrid = self.technique_blender.suggest_creative_technique(
                 context,
                 creativity_level=self.config.get('creativity_level', 0.6)
@@ -215,29 +222,40 @@ class SuperhumanDJEngine:
             
             if 'error' not in suggested_hybrid:
                 selected_technique = suggested_hybrid
-                analysis['technique'] = {
-                    'type': 'hybrid',
-                    'name': suggested_hybrid.get('name'),
-                    'techniques': suggested_hybrid.get('techniques'),
-                    'weights': suggested_hybrid.get('weights'),
-                    'complexity': suggested_hybrid.get('complexity', 0.5),
-                    'boldness': suggested_hybrid.get('boldness', 0.5)
-                }
             else:
                 # Fallback to single technique
                 selected_technique = {
                     'techniques': [rhythm_match.get('recommended_technique', 'long_blend')],
                     'weights': [1.0]
                 }
-                analysis['technique'] = {
-                    'type': 'single',
-                    'name': selected_technique['techniques'][0]
-                }
         else:
             selected_technique = {
                 'techniques': techniques if techniques else ['long_blend'],
                 'weights': [1.0 / len(techniques)] * len(techniques) if techniques else [1.0]
             }
+
+        # Diversify selected technique to avoid repeatedly using the same preset/type.
+        selected_technique, diversity_note = self._diversify_selected_technique(
+            selected_technique,
+            context
+        )
+
+        if len(selected_technique.get('techniques', [])) > 1:
+            analysis['technique'] = {
+                'type': 'hybrid',
+                'name': selected_technique.get('name'),
+                'techniques': selected_technique.get('techniques'),
+                'weights': selected_technique.get('weights'),
+                'complexity': selected_technique.get('complexity', 0.5),
+                'boldness': selected_technique.get('boldness', 0.5)
+            }
+        else:
+            analysis['technique'] = {
+                'type': 'single',
+                'name': (selected_technique.get('techniques') or ['long_blend'])[0]
+            }
+        if diversity_note:
+            analysis['technique']['diversity_note'] = diversity_note
         
         analysis['timings']['technique_selection'] = time.time() - stage_start
         analysis['stages'].append('technique_selected')
@@ -500,7 +518,12 @@ class SuperhumanDJEngine:
                 use_technique_path = False  # Force One Kiss beat → Hell of a Life beat handoff
                 print("    ✓ Forcing stem orchestration (One Kiss beat → Hell of a Life handoff)")
             else:
-                ratio = float(self.config.get('technique_execution_ratio', 0.45))
+                ratio = float(self.config.get('technique_execution_ratio', 0.62))
+                # Anti-repeat: if last transition used stem orchestration, bias heavily
+                # toward technique path this time.
+                avoid_stem_repeat = bool(self.config.get('avoid_consecutive_stem_orchestration', True))
+                if avoid_stem_repeat and self._recent_mix_methods and self._recent_mix_methods[-1] == 'stem_orchestration':
+                    ratio = min(0.9, ratio + 0.25)
                 use_technique_path = random.random() < ratio
         if not (conversation is not None and stems_a is not None and stems_b is not None):
             use_technique_path = True  # No stems: must use technique path
@@ -539,6 +562,16 @@ class SuperhumanDJEngine:
                     stems_a, stems_b
                 )
                 analysis['mix_method'] = 'single_technique'
+
+        # Update diversity memory
+        self._recent_mix_methods.append(analysis['mix_method'])
+        if len(self._recent_mix_methods) > 24:
+            self._recent_mix_methods = self._recent_mix_methods[-24:]
+        primary_technique = self._get_primary_technique(selected_technique)
+        if primary_technique:
+            self._recent_primary_techniques.append(primary_technique)
+            if len(self._recent_primary_techniques) > 24:
+                self._recent_primary_techniques = self._recent_primary_techniques[-24:]
         
         analysis['timings']['execution'] = time.time() - stage_start
         analysis['stages'].append('transition_executed')
@@ -581,6 +614,39 @@ class SuperhumanDJEngine:
             'quality': quality,
             'technique_used': selected_technique
         }
+
+    def _get_primary_technique(self, selected_technique: Dict) -> str:
+        techniques = selected_technique.get('techniques', []) if isinstance(selected_technique, dict) else []
+        if techniques:
+            return str(techniques[0])
+        return str(selected_technique.get('name', '')) if isinstance(selected_technique, dict) else ''
+
+    def _diversify_selected_technique(self,
+                                      selected_technique: Dict,
+                                      context: Dict) -> Tuple[Dict, Optional[str]]:
+        """
+        Reduce repeated technique usage across consecutive transitions.
+        """
+        lookback = int(self.config.get('technique_diversity_lookback', 4))
+        attempts = int(self.config.get('technique_diversity_attempts', 4))
+        recent = self._recent_primary_techniques[-lookback:] if lookback > 0 else []
+        current_primary = self._get_primary_technique(selected_technique)
+
+        if not current_primary or current_primary not in recent:
+            return selected_technique, None
+
+        for _ in range(max(1, attempts)):
+            alt = self.technique_blender.suggest_creative_technique(
+                context,
+                creativity_level=min(1.0, float(self.config.get('creativity_level', 0.6)) + 0.15)
+            )
+            if not isinstance(alt, dict) or 'error' in alt:
+                continue
+            alt_primary = self._get_primary_technique(alt)
+            if alt_primary and alt_primary not in recent:
+                return alt, f"diversity override: avoided repeated '{current_primary}'"
+
+        return selected_technique, None
     
     # ==================== INDIVIDUAL ENHANCEMENTS ====================
     

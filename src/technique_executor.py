@@ -1154,8 +1154,10 @@ class TechniqueExecutor:
                                seg_b_stems: Optional[Dict] = None) -> np.ndarray:
         """Execute back-and-forth: alternate A and B every N bars, then settle on B."""
         n_samples = min(len(seg_a), len(seg_b))
-        switch_interval_bars = params.get('switch_interval_bars', 8)
-        num_switches = params.get('num_switches', 2)
+        switch_interval_bars = float(params.get('switch_interval_bars', 8))
+        num_switches = int(round(float(params.get('num_switches', 2))))
+        switch_interval_bars = max(1.0, switch_interval_bars)
+        num_switches = max(0, num_switches)
         bar_sec = 4.0 * (60.0 / 120.0)
         switch_samples = int(switch_interval_bars * bar_sec * self.sr)
         switch_samples = min(switch_samples, n_samples // (num_switches + 1))
@@ -1342,4 +1344,3 @@ class TechniqueExecutor:
             pass
             
         return mixed[:n_samples]
-

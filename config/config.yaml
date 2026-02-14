@@ -115,7 +115,12 @@ superhuman:
   bpm_matching_always: true
   bpm_matching_min_diff: 1.0  # Apply tempo morph when |tempo_a - tempo_b| > this (BPM)
   # Use selected technique (filter_sweep, drop_mix, etc.) this fraction of the time instead of stem crossfade (0–1)
-  technique_execution_ratio: 0.45
+  technique_execution_ratio: 0.62
+  # Avoid repeating stem orchestration back-to-back when stems are available
+  avoid_consecutive_stem_orchestration: true
+  # Technique diversity memory for superhuman transitions
+  technique_diversity_lookback: 4
+  technique_diversity_attempts: 4
   # When true, always use stem orchestration (One Kiss beat → Hell of a Life beat handoff) instead of hybrid techniques
   force_stem_orchestration: false
   # Override stem conversation type: null = use recommended, or e.g. "bass_from_a_beat_from_b" (keep A bass, B beat)
