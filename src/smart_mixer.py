@@ -170,6 +170,11 @@ class SmartMixer:
                         key_modulation_enabled=super_cfg.get('key_modulation_enabled', True),
                         key_modulation_max_semitones=int(super_cfg.get('key_modulation_max_semitones', 2)),
                         key_modulation_only_when_incompatible=super_cfg.get('key_modulation_only_when_incompatible', True),
+                        # Stem morphing config
+                        stem_morphing_enabled=super_cfg.get('stem_morphing_enabled', True),
+                        stem_morph_depth=float(super_cfg.get('stem_morph_depth', 0.8)),
+                        stem_morph_strategy=super_cfg.get('stem_morph_strategy', 'best_match'),
+                        stem_morph_techniques=super_cfg.get('stem_morph_techniques', None),
                     )
             except Exception:
                 pass
@@ -1294,6 +1299,17 @@ class SmartMixer:
             if transition_duration is None:
                 bars = 16 if tempo_a > 130 else 24
                 transition_duration = (bars * 4 * 60) / tempo_a
+            
+            # Ensure we have enough audio for the transition (avoid zero-padding silence)
+            max_point_b = max(0.0, (len(y_b) / self.sr) - transition_duration - 0.5)
+            if point_b > max_point_b:
+                print(f"  ⚠ Shifting Song B entry from {point_b:.1f}s to {max_point_b:.1f}s to prevent silence padding")
+                point_b = max_point_b
+                
+            min_point_a = min((len(y_a) / self.sr) - 0.5, transition_duration + 0.5)
+            if point_a < min_point_a:
+                print(f"  ⚠ Shifting Song A exit from {point_a:.1f}s to {min_point_a:.1f}s to prevent padding")
+                point_a = min_point_a
             
             print(f"  → Transition: {transition_duration:.1f}s")
             print(f"  → Song A exit: {point_a:.1f}s")

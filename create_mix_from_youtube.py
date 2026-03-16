@@ -172,7 +172,16 @@ def main():
     parser.add_argument('--force-stem-orchestration', action='store_true',
                        help='Force stem orchestration instead of hybrid techniques')
     parser.add_argument('--conversation-type', type=str, default=None,
-                       help='Stem handoff type: e.g. melody_a_drums_vocals_b (A melody + B drums + B vocals), bass_from_a_beat_from_b, vocal_overlay_handoff')
+                       help='Stem handoff type: e.g. progressive_morph, melody_a_drums_vocals_b, bass_from_a_beat_from_b, vocal_overlay_handoff')
+    parser.add_argument('--morph-depth', type=float, default=None,
+                       help='Stem morphing depth 0.0-1.0 (default: from config, usually 0.8). Higher = more aggressive content transformation')
+    parser.add_argument('--morph-strategy', type=str, default=None,
+                       choices=['best_match', 'drums_first', 'all', 'drums', 'bass', 'vocals', 'other'],
+                       help='Which stems to morph (default: from config, usually best_match)')
+    parser.add_argument('--no-morph', action='store_true',
+                       help='Disable stem morphing entirely')
+    parser.add_argument('--transition', type=float, default=32.0,
+                       help='Transition duration in seconds (default: 32). Longer = smoother morph.')
     parser.add_argument('--keep', action='store_true',
                        help='Keep downloaded audio files (default: delete after mixing)')
     
@@ -192,11 +201,15 @@ def main():
         song_b_path.unlink()
     
     try:
+        # We need enough audio to play the whole transition AND some context.
+        # If the user requests a 64s transition, we must download at least 64 + padding.
+        target_duration = max(args.duration, int(args.transition) + 40)
+        
         # Download both songs (prefer official audio / lyrics to avoid geo-blocks)
-        # Song A: last 60 seconds (from_end=True)
-        download_youtube_audio(args.url1, song_a_path, args.duration, from_end=True, prefer=args.prefer)
-        # Song B: first 60 seconds (from_end=False)
-        download_youtube_audio(args.url2, song_b_path, args.duration, from_end=False, prefer=args.prefer)
+        # Song A: last N seconds (from_end=True)
+        download_youtube_audio(args.url1, song_a_path, target_duration, from_end=True, prefer=args.prefer)
+        # Song B: first N seconds (from_end=False)
+        download_youtube_audio(args.url2, song_b_path, target_duration, from_end=False, prefer=args.prefer)
         
         print("\n" + "="*60)
         print("CREATING MIX")
@@ -206,10 +219,22 @@ def main():
         from src.smart_mixer import SmartMixer
         from datetime import datetime
         mixer = SmartMixer()
+        # Apply stem morphing overrides from CLI
+        if mixer.superhuman_enabled and mixer.superhuman_engine is not None:
+            morph_overrides = {}
+            if args.no_morph:
+                morph_overrides['stem_morphing_enabled'] = False
+            if args.morph_depth is not None:
+                morph_overrides['stem_morph_depth'] = args.morph_depth
+            if args.morph_strategy is not None:
+                morph_overrides['stem_morph_strategy'] = args.morph_strategy
+            if morph_overrides:
+                mixer.superhuman_engine.configure(**morph_overrides)
+                print(f"  🧬 Stem morph overrides: {morph_overrides}")
         mixed_audio = mixer.create_superhuman_mix(
             str(song_a_path),
             str(song_b_path),
-            transition_duration=16.0,
+            transition_duration=args.transition,
             creativity_level=0.6,
             optimize_quality=True,
             force_stem_orchestration=getattr(args, 'force_stem_orchestration', False),

@@ -38,12 +38,14 @@ class SuperhumanDJEngine:
         from src.hybrid_technique_blender import HybridTechniqueBlender
         from src.stem_orchestrator import StemOrchestrator
         from src.montecarlo_optimizer import MonteCarloQualityOptimizer
+        from src.stem_morpher import StemMorpher
         
         self.micro_timing = MicroTimingEngine(sr=sr)
         self.spectral_intel = SpectralIntelligenceEngine(sr=sr)
         self.technique_blender = HybridTechniqueBlender(sr=sr)
         self.stem_orchestrator = StemOrchestrator(sr=sr)
         self.montecarlo = MonteCarloQualityOptimizer(sr=sr)
+        self.stem_morpher = StemMorpher(sr=sr)
         
         # Configuration
         # NOTE: some of these can be overridden from config.yaml via SmartMixer.configure(...)
@@ -77,6 +79,13 @@ class SuperhumanDJEngine:
             'key_modulation_enabled': True,
             'key_modulation_max_semitones': 2,
             'key_modulation_only_when_incompatible': True,
+            # ── Stem Morphing: progressively transform stem A content toward stem B ──
+            # Instead of just fading volumes, the actual audio transforms note-by-note,
+            # hit-by-hit, timbre-by-timbre into the next song's stems.
+            'stem_morphing_enabled': True,
+            'stem_morph_depth': 0.8,           # 0.0=off, 1.0=full content transformation
+            'stem_morph_strategy': 'best_match',  # 'best_match','drums_first','all', or stem name
+            'stem_morph_techniques': None,      # None=auto-select per stem, or list like ['spectral_envelope','onset_replacement']
         }
         # Session-local diversity memory
         self._recent_mix_methods: List[str] = []
@@ -337,6 +346,61 @@ class SuperhumanDJEngine:
         
         analysis['timings']['stem_orchestration'] = time.time() - stage_start
         analysis['stages'].append('stems_orchestrated')
+        
+        # ==================== STAGE 4.5: STEM MORPHING ====================
+        # Progressive content transformation — the actual audio of selected stems
+        # gets warped toward the target song's stems before volume curves are applied.
+        if (self.config.get('stem_morphing_enabled', True)
+                and stems_a is not None and stems_b is not None):
+            print("  🧬 Stage 4.5: Progressive Stem Morphing...")
+            stage_start = time.time()
+            try:
+                # 1. Analyze which stems are best candidates for morphing
+                morph_compat = self.stem_morpher.analyze_stem_compatibility(
+                    stems_a, stems_b
+                )
+                
+                # 2. Build morph plan based on config
+                morph_plan = self.stem_morpher.create_morph_plan(
+                    morph_compat,
+                    strategy=self.config.get('stem_morph_strategy', 'best_match'),
+                    morph_depth=float(self.config.get('stem_morph_depth', 0.8)),
+                    techniques=self.config.get('stem_morph_techniques'),
+                )
+                
+                # 3. Apply progressive morphing to stems_a (in-place replacement)
+                morphed_stems_a, morph_report = self.stem_morpher.apply_progressive_morph(
+                    stems_a, stems_b, morph_plan
+                )
+                stems_a = morphed_stems_a  # Replace stems with morphed versions
+                
+                analysis['stem_morphing'] = {
+                    'compatibility': morph_compat,
+                    'plan': {
+                        'strategy': morph_plan.get('strategy'),
+                        'stems_to_morph': list(morph_plan.get('stems_to_morph', {}).keys()),
+                        'morph_depth': morph_plan.get('morph_depth'),
+                    },
+                    'report': morph_report,
+                }
+                
+                morphed_stems_list = list(morph_plan.get('stems_to_morph', {}).keys())
+                if morphed_stems_list:
+                    print(f"    ✓ Morphed stems: {', '.join(morphed_stems_list)}")
+                    for s_name in morphed_stems_list:
+                        s_report = morph_report.get(s_name, {})
+                        techs = s_report.get('techniques_applied', [])
+                        if techs:
+                            print(f"      └─ {s_name}: {' → '.join(techs)}")
+                else:
+                    print("    ⚠ No stems selected for morphing")
+                    
+            except Exception as e:
+                print(f"    ⚠ Stem morphing failed: {e}")
+                analysis['stem_morphing'] = {'error': str(e)}
+            
+            analysis['timings']['stem_morphing'] = time.time() - stage_start
+            analysis['stages'].append('stems_morphed')
         
         # ==================== STAGE 5: APPLY SPECTRAL INTELLIGENCE & TEMPO MORPH ====================
         print("  🌈 Stage 5: Spectral Processing...")
@@ -751,7 +815,8 @@ class SuperhumanDJEngine:
                 'spectral_intel': type(self.spectral_intel).__name__,
                 'technique_blender': type(self.technique_blender).__name__,
                 'stem_orchestrator': type(self.stem_orchestrator).__name__,
-                'montecarlo': type(self.montecarlo).__name__
+                'montecarlo': type(self.montecarlo).__name__,
+                'stem_morpher': type(self.stem_morpher).__name__
             }
         }
 

@@ -114,6 +114,8 @@ class StemOrchestrator:
             return self._create_bass_from_a_beat_from_b(stems_a, stems_b, available_stems, phrase_ctx)
         elif conversation_type == 'melody_a_drums_vocals_b':
             return self._create_melody_a_drums_vocals_b(stems_a, stems_b, available_stems, phrase_ctx)
+        elif conversation_type == 'progressive_morph':
+            return self._create_progressive_morph(stems_a, stems_b, available_stems, phrase_ctx)
         else:
             return self._create_layered_reveal(stems_a, stems_b, available_stems, phrase_ctx)
     
@@ -290,6 +292,75 @@ class StemOrchestrator:
             'curves': curves,
             'description': 'Stems transition at different times for complex texture'
         }
+        
+    def _create_progressive_morph(self,
+                                  stems_a: Dict,
+                                  stems_b: Dict,
+                                  available_stems: set,
+                                  phrase_ctx: Optional[Dict] = None) -> Dict:
+        """
+        Creates volume curves for progressive content morphs in a layered way.
+        
+        To prevent the "empty" feeling, we introduce Song B stems one by one 
+        throughout the transition (Layered Reveal style).
+        
+        Since StemMorpher is already transforming stems_a into stems_b, 
+        the crossfade between them is naturally smooth as they converge in identity.
+        """
+        ref_stem = next((stems_a[s] for s in available_stems if len(stems_a[s]) > 0), 
+                        list(stems_a.values())[0])
+        n_samples = len(ref_stem)
+        
+        # Reveal order for layering Song B
+        reveal_order = ['drums', 'bass', 'other', 'vocals']
+        # When each stem of Song B starts to fade in (ratio of transition)
+        reveal_starts = [0.05, 0.25, 0.45, 0.65] 
+        # Duration of each individual stem's crossfade
+        fade_duration_ratio = 0.30 
+        
+        curves = {}
+        for stem in available_stems:
+            curve_a = np.ones(n_samples)
+            curve_b = np.zeros(n_samples)
+            
+            # Find when this specific stem should transition
+            if stem in reveal_order:
+                idx = reveal_order.index(stem)
+                start_ratio = reveal_starts[idx]
+            else:
+                start_ratio = 0.5
+                
+            start_sample = int(n_samples * start_ratio)
+            fade_samples = int(n_samples * fade_duration_ratio)
+            end_sample = min(n_samples, start_sample + fade_samples)
+            
+            if end_sample > start_sample:
+                t = np.linspace(0, 1, end_sample - start_sample)
+                # S-curve crossfade
+                fade_out = 0.5 * (1 + np.cos(np.pi * t))
+                fade_in = 0.5 * (1 - np.cos(np.pi * t))
+                
+                curve_a[start_sample:end_sample] = fade_out
+                curve_a[end_sample:] = 0.0
+                
+                curve_b[start_sample:end_sample] = fade_in
+                curve_b[end_sample:] = 1.0
+            
+            # Smooth out curves
+            curve_a = gaussian_filter1d(curve_a, sigma=500)
+            curve_b = gaussian_filter1d(curve_b, sigma=500)
+            
+            curves[stem] = {
+                'a': curve_a.tolist(),
+                'b': curve_b.tolist()
+            }
+            
+        return {
+            'type': 'progressive_morph',
+            'curves': curves,
+            'description': 'Layered reveal of Song B using stencils for morphing transformation'
+        }
+
     
     def _create_layered_reveal(self,
                                stems_a: Dict,
@@ -1155,7 +1226,9 @@ class StemOrchestrator:
             # - counter_melody: A vocals stay over B rhythm
             # - layered_reveal: gradual B stem reveal
             # - interweave: stems transition at different times
-            pool = ['bass_from_a_beat_from_b', 'counter_melody', 'layered_reveal', 'interweave']
+            # - progressive_morph: stems transform content A→B progressively
+            pool = ['bass_from_a_beat_from_b', 'counter_melody', 'layered_reveal',
+                    'interweave', 'progressive_morph']
             recommended = random.choice(pool)
         elif has_vocals_a and not has_vocals_b:
             # Song A vocals can play over Song B
@@ -1164,8 +1237,9 @@ class StemOrchestrator:
             # Reveal Song B vocals last
             recommended = 'layered_reveal'
         elif has_bass_a and has_bass_b and has_drums_a and has_drums_b:
-            # Both have bass and drums: keep A bass, bring in B beat (e.g. New Person → Let It Happen)
-            recommended = 'bass_from_a_beat_from_b'
+            # Both have bass and drums: progressive morph or bass_from_a_beat_from_b
+            pool = ['bass_from_a_beat_from_b', 'progressive_morph']
+            recommended = random.choice(pool)
         else:
             # Instrumental - call and response works well
             recommended = 'call_response'
