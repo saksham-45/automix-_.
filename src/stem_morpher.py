@@ -208,6 +208,40 @@ class StemMorpher:
             'morph_depth': morph_depth,
             'strategy': strategy,
         }
+        
+    def morph_stems(
+        self,
+        stems_a: Dict[str, np.ndarray],
+        stems_b: Dict[str, np.ndarray],
+        stems_to_process: Optional[set] = None,
+        depth: float = 0.6,
+        strategy: str = 'all'
+    ) -> Dict[str, np.ndarray]:
+        """
+        Public helper to morph multiple stems at once.
+        Creates a plan internally and returns morphed stems_a.
+        """
+        if stems_to_process is None:
+            stems_to_process = set(stems_a.keys()) & set(stems_b.keys())
+            
+        # Create a simplified compatibility result for the plan creator
+        rankings = []
+        for s in stems_to_process:
+            rankings.append({
+                'stem': s,
+                'score': 1.0, # dummy score
+                'recommended_techniques': self.STEM_TECHNIQUE_MAP.get(s, ['spectral_envelope'])
+            })
+            
+        compat = {'stem_rankings': rankings}
+        plan = self.create_morph_plan(
+            compat, 
+            strategy=strategy, 
+            morph_depth=depth
+        )
+        
+        morphed, _ = self.apply_progressive_morph(stems_a, stems_b, plan)
+        return morphed
 
     def apply_progressive_morph(
         self,

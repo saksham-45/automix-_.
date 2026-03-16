@@ -1219,6 +1219,8 @@ class SmartMixer:
                               optimize_quality: bool = True,
                               force_stem_orchestration: bool = False,
                               conversation_type_override: Optional[str] = None,
+                              morph_depth: Optional[float] = None,
+                              morph_strategy: Optional[str] = None,
                               return_metadata: bool = False) -> Union[np.ndarray, Tuple[np.ndarray, Dict]]:
         """
         Create a SUPERHUMAN-quality mix using all advanced AI/DSP capabilities.
@@ -1297,7 +1299,8 @@ class SmartMixer:
             
             # Determine transition duration
             if transition_duration is None:
-                bars = 16 if tempo_a > 130 else 24
+                # Optimized for 84s transitions as per user standard
+                bars = 32 if tempo_a > 130 else 42
                 transition_duration = (bars * 4 * 60) / tempo_a
             
             # Ensure we have enough audio for the transition (avoid zero-padding silence)
@@ -1334,7 +1337,9 @@ class SmartMixer:
                 key_a, key_b,
                 stems_a, stems_b,
                 force_stem_orchestration=force_stem_orchestration,
-                conversation_type_override=conversation_type_override
+                conversation_type_override=conversation_type_override,
+                morph_depth=morph_depth,
+                morph_strategy=morph_strategy
             )
             
             mixed = result['mixed']

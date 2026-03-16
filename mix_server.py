@@ -28,7 +28,14 @@ def start_playlist():
         return jsonify({"error": "URL required"}), 400
     
     try:
+        morph_settings = request.json.get("morph_settings", {})
         sid = manager.start_session(url)
+        session = manager.get_session(sid)
+        if session and morph_settings:
+            session.morph_depth = float(morph_settings.get("depth", session.morph_depth))
+            session.morph_strategy = morph_settings.get("strategy", session.morph_strategy)
+            session.enable_morphing = bool(morph_settings.get("enabled", session.enable_morphing))
+            
         return jsonify({"session_id": sid})
     except Exception as e:
         return jsonify({"error": str(e)}), 500

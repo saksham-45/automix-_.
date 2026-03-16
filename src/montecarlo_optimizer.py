@@ -45,7 +45,8 @@ class MonteCarloQualityOptimizer:
             'filter_sweep_end': (2000, 10000),  # Hz
             'echo_delay_ms': (200, 800),
             'energy_dip_ratio': (0.2, 0.5),
-            'stem_stagger_offset': (0.1, 0.4)
+            'stem_stagger_offset': (0.1, 0.4),
+            'morph_depth': (0.3, 0.9)  # Added for progressive_morph
         }
     
     # ==================== MONTE CARLO SIMULATION ====================
@@ -620,6 +621,7 @@ class MonteCarloQualityOptimizer:
             'drop_mix': 0.0,
             'partial_stem_separation': 0.06,
             'vocal_layering': 0.08,
+            'progressive_morph': 0.12,  # New technique bonus
         }
         
         technique_adj = technique_bonus.get(technique, 0.0)

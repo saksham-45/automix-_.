@@ -14,8 +14,8 @@ from src.youtube_downloader import download_youtube_audio
 from scripts.mix_playlist import fetch_playlist_video_ids
 
 # Constants
-TRANSITION_WINDOW = 45.0  # Seconds of audio to grab from ends for mixing
-TRANSITION_LENGTH = 16.0  # Target overlap duration
+TRANSITION_WINDOW = 124.0  # Seconds of audio to grab from ends for mixing (standard matching create_mix_from_youtube)
+TRANSITION_LENGTH = 84.0  # Target overlap duration (84s as per user requirement)
 SR = 44100
 CACHE_DIR = Path("data/cache/stream")
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -40,6 +40,11 @@ class StreamSession:
         self._worker_thread.start()
         
         self.mixer = SmartMixer(sr=SR)
+        
+        # Morph settings
+        self.morph_depth = 0.8 # Match engine standard
+        self.morph_strategy = 'all'
+        self.enable_morphing = True
 
     def _build_fallback_transition(self, snippet_a: np.ndarray, snippet_b: np.ndarray):
         """
@@ -224,8 +229,10 @@ class StreamSession:
                     mixed, mix_meta = self.mixer.create_superhuman_mix(
                         str(p_a), str(p_b), 
                         transition_duration=TRANSITION_LENGTH,
-                        optimize_quality=False, # Faster
+                        optimize_quality=True, # Match create_mix_from_youtube standard
                         return_metadata=True,
+                        morph_depth=self.morph_depth if self.enable_morphing else 0.0,
+                        morph_strategy=self.morph_strategy
                     )
                     print("DEBUG: create_superhuman_mix returned", flush=True)
 

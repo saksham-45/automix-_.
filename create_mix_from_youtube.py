@@ -165,8 +165,8 @@ def main():
     )
     parser.add_argument('url1', help='YouTube URL or search query for song A (outgoing), e.g. "Tame Impala Let It Happen"')
     parser.add_argument('url2', help='YouTube URL or search query for song B (incoming), e.g. "Tame Impala New Person Same Old Mistakes"')
-    parser.add_argument('--duration', type=int, default=60, 
-                       help='Max duration to download from each video (seconds, default: 60)')
+    parser.add_argument('--duration', type=int, default=124, 
+                       help='Max duration to download from each video (seconds, default: 124)')
     parser.add_argument('--prefer', choices=['official audio', 'lyrics'], default='official audio',
                        help='When using a search query, prefer "official audio" or "lyrics" (default: official audio)')
     parser.add_argument('--force-stem-orchestration', action='store_true',
@@ -180,8 +180,8 @@ def main():
                        help='Which stems to morph (default: from config, usually best_match)')
     parser.add_argument('--no-morph', action='store_true',
                        help='Disable stem morphing entirely')
-    parser.add_argument('--transition', type=float, default=32.0,
-                       help='Transition duration in seconds (default: 32). Longer = smoother morph.')
+    parser.add_argument('--transition', type=float, default=84.0,
+                       help='Transition duration in seconds (default: 84). Longer = smoother morph.')
     parser.add_argument('--keep', action='store_true',
                        help='Keep downloaded audio files (default: delete after mixing)')
     

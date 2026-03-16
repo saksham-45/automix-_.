@@ -60,10 +60,8 @@ class TechniqueExecutor:
             'energy_build': self._execute_energy_build,
             'loop_transition': self._execute_loop_transition,
             'breakdown_to_build': self._execute_breakdown_to_build,
-            'drop_on_the_one': self._execute_drop_on_the_one,
-            'back_and_forth': self._execute_back_and_forth,
-            'drum_roll': self._execute_drum_roll,
-            'thematic_handoff': self._execute_thematic_handoff
+            'thematic_handoff': self._execute_thematic_handoff,
+            'progressive_morph': self._execute_progressive_morph
         }
         
         if technique_name in method_map:
@@ -1344,3 +1342,80 @@ class TechniqueExecutor:
             pass
             
         return mixed[:n_samples]
+    def _execute_progressive_morph(self,
+                                  seg_a: np.ndarray,
+                                  seg_b: np.ndarray,
+                                  params: Dict,
+                                  seg_a_stems: Optional[Dict] = None,
+                                  seg_b_stems: Optional[Dict] = None) -> np.ndarray:
+        """
+        Executes a progressive content morph between two songs.
+        This technique actively transforms the auditory characteristics of Song A
+        to match Song B during the transition.
+        """
+        from src.stem_morpher import StemMorpher
+        from src.stem_orchestrator import StemOrchestrator
+        
+        morpher = StemMorpher(sr=self.sr)
+        orchestrator = StemOrchestrator(sr=self.sr)
+        
+        # Determine available stems
+        available_stems = set(seg_a_stems.keys() if seg_a_stems else []) & \
+                         set(seg_b_stems.keys() if seg_b_stems else [])
+        
+        if not available_stems:
+            print("  ⚠ No stems available for progressive morph, falling back to long_blend")
+            return self._execute_long_blend(seg_a, seg_b, params, seg_a_stems, seg_b_stems)
+            
+        # 1. Get Morph Parameters
+        depth = params.get('morph_depth', 0.6)
+        strategy = params.get('morph_strategy', 'all')
+        
+        # 2. Perform Content Morphing
+        # This creates 'morphed_stems_a' which transitions from A toward B
+        morphed_stems_a = morpher.morph_stems(
+            seg_a_stems, seg_b_stems, 
+            available_stems, 
+            depth=depth, 
+            strategy=strategy
+        )
+        
+        # 3. Create Layered Volume Curves (Reveal)
+        # Using the specific progressive_morph orchestral patterns
+        orchestration = orchestrator.create_stem_conversation(
+            morphed_stems_a, seg_b_stems,
+            conversation_type='progressive_morph',
+            tempo_a=params.get('tempo_a', 120.0),
+            tempo_b=params.get('tempo_b', 120.0),
+            segment_duration_sec=len(seg_a) / self.sr
+        )
+        
+        # 4. Combine Stems
+        n_samples = len(seg_a)
+        mixed = np.zeros((n_samples, 2))
+        
+        curves = orchestration['curves']
+        for stem in morphed_stems_a:
+            if stem not in curves:
+                continue
+                
+            # Body A (morphed)
+            stem_a = morphed_stems_a[stem]
+            curve_a = np.array(curves[stem]['a'])
+            
+            # Ensure stereo
+            if stem_a.ndim == 1:
+                stem_a = np.column_stack([stem_a, stem_a])
+            
+            # Body B (original)
+            stem_b = seg_b_stems[stem]
+            curve_b = np.array(curves[stem]['b'])
+            
+            if stem_b.ndim == 1:
+                stem_b = np.column_stack([stem_b, stem_b])
+                
+            # Apply curves and mix
+            mixed += stem_a[:n_samples] * curve_a[:n_samples, np.newaxis]
+            mixed += stem_b[:n_samples] * curve_b[:n_samples, np.newaxis]
+            
+        return mixed.astype(np.float32)
