@@ -134,6 +134,12 @@ class SuperhumanDJEngine:
         start_time = time.time()
         analysis = {'stages': [], 'timings': {}}
         
+        # Resolve morph depth and strategy from config if not provided
+        if morph_depth is None:
+            morph_depth = float(self.config.get('stem_morph_depth', 0.8))
+        if morph_strategy is None:
+            morph_strategy = self.config.get('stem_morph_strategy', 'best_match')
+        
         # ==================== STAGE 1: ANALYSIS ====================
         print("  🔬 Stage 1: Superhuman Analysis...")
         stage_start = time.time()
