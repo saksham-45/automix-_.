@@ -30,21 +30,22 @@ Instead of hardcoding mixing rules, this system:
 
 ### Core Innovation
 
-**Two-Stage Neural Network Architecture:**
-- **Stage 1: Decision Network (DecisionNN)** - Chooses which transition technique to use based on song compatibility
-- **Stage 2: Curve Generation Network (CurveLSTM)** - Generates precise automation curves (volume, EQ, filters) for the selected technique
+**Three-Stage "Superhuman" Architecture:**
+- **Stage 1: Multi-Factor Analysis (Engine Core)** - Extracts 100+ spectral, temporal, and structural features.
+- **Stage 2: Superhuman Creative Engine** - Uses **Monte Carlo Optimization** to simulate 50+ transition variations and select the perceptually optimal path.
+- **Stage 3: Progressive Content Morphing** - Instead of simple volume fades, the system uses **Stem Morphing** to transform the actual audio data of one song into another.
 
 This mimics how human DJs work: first decide the technique, then execute it precisely.
 
 ### What Makes This Different
 
-- ✅ **Data-driven learning** from expert mixes, not programmed rules
-- ✅ **17 transition techniques** (long blend, bass swap, staggered stem mix, phrase match, etc.)
-- ✅ **Intelligent stem separation** to prevent vocal/instrument conflicts
-- ✅ **Quality prediction** before committing to a mix
-- ✅ **Multi-candidate evaluation** to find the best transition points
-- ✅ **Adaptive analysis** that explores full songs, not just intros/outros
-- ✅ **Professional-quality output** with beat matching, harmonic compatibility, and smooth energy flow
+- ✅ **Superhuman Mixing Engine** with Monte Carlo Optimization (test 50+ variations per mix)
+- ✅ **Progressive Stem Morphing** - Warp the timbre and rhythm of Song A into Song B
+- ✅ **84-second Ultra-Long Transitions** - Professional-grade long-form transformation standard
+- ✅ **Micro-timing Alignment** - Sub-millisecond groove and transient negotiation
+- ✅ **Spectral Intelligence** - Surgical frequency slotting to prevent "muddy" mixes
+- ✅ **18 transition techniques** (including the flagship `progressive_morph`)
+- ✅ **Mix Server** - Flask-based streaming server for dynamic YouTube playlist mixing
 
 ## Architecture
 
@@ -110,10 +111,10 @@ This mimics how human DJs work: first decide the technique, then execute it prec
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
 │  8. FINAL ASSEMBLY                                          │
-│     - Add 10s context before transition                     │
-│     - Add 10s context after transition                      │
+│     - Add 20s context before transition                     │
+│     - Add 20s context after transition                      │
 │     - Concatenate: [Context A] + [Mix] + [Context B]        │
-│     - Save as WAV file (36 seconds total)                   │
+│     - Save as WAV file (124 seconds total @ 84s Mix)        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -175,6 +176,7 @@ Extracts **100+ features** from songs:
 15. `energy_build` - Progressive energy increase with filter/EQ
 16. `loop_transition` - Use loops to create smooth mixing points
 17. `breakdown_to_build` - Transition from breakdown to build section
+18. `progressive_morph` - **[Flagship]** Content-aware audio transformation using stem morphing
 
 ### 4. Stem Separation & Intelligent Processing
 
@@ -275,6 +277,21 @@ python create_mix_from_youtube.py \
 - Generates mix using AI models
 - Saves to `ai_dj_mix_YYYYMMDD_HHMMSS.wav`
 - Moves old mixes to `data/old_mixes/`
+
+### Launch the High-Fidelity Mix Server
+
+The system includes a production-grade Flask server that can mix entire YouTube playlists on the fly.
+
+```bash
+# Start the server (default port 5005)
+python mix_server.py
+```
+
+**Server Features:**
+- **On-the-fly Mixing:** Streams high-fidelity chunks directly to your browser.
+- **Playlist Support:** Just paste a YouTube playlist URL.
+- **Live Morphing Controls:** Toggle `progressive_morph` and adjust depth via the UI/API.
+- **Superhuman Standard:** Defaults to **84-second** transitions with Monte Carlo optimization.
 
 ### Generate a Mix from Local Files
 
