@@ -124,6 +124,46 @@ class HybridTechniqueBlender:
                 'boldness': 0.8,
                 'compatible_with': ['quick_cut', 'drop_mix'],
                 'incompatible_with': ['long_blend', 'filter_sweep']
+            },
+            'loop_transition': {
+                'category': 'timing',
+                'energy_change': 'stable',
+                'complexity': 0.5,
+                'boldness': 0.3,
+                'compatible_with': ['long_blend', 'bass_swap', 'phrase_match'],
+                'incompatible_with': ['quick_cut', 'backspin']
+            },
+            'drop_on_the_one': {
+                'category': 'cut',
+                'energy_change': 'sudden',
+                'complexity': 0.2,
+                'boldness': 0.8,
+                'compatible_with': ['quick_cut', 'double_drop'],
+                'incompatible_with': ['long_blend', 'echo_out']
+            },
+            'back_and_forth': {
+                'category': 'timing',
+                'energy_change': 'stable',
+                'complexity': 0.6,
+                'boldness': 0.5,
+                'compatible_with': ['long_blend', 'phrase_match', 'vocal_layering'],
+                'incompatible_with': ['quick_cut']
+            },
+            'drum_roll': {
+                'category': 'energy',
+                'energy_change': 'building',
+                'complexity': 0.5,
+                'boldness': 0.7,
+                'compatible_with': ['filter_sweep', 'quick_cut', 'drop_mix'],
+                'incompatible_with': ['long_blend']
+            },
+            'thematic_handoff': {
+                'category': 'timing',
+                'energy_change': 'stable',
+                'complexity': 0.3,
+                'boldness': 0.3,
+                'compatible_with': ['phrase_match', 'long_blend', 'vocal_layering'],
+                'incompatible_with': []
             }
         }
         
@@ -363,7 +403,12 @@ class HybridTechniqueBlender:
             'vocal_layering': {'vocal_hold_ratio': 0.6},
             'double_drop': {'sync_point_ratio': 0.5, 'energy_boost': 1.2},
             'quick_cut': {'fade_ms': 100},
-            'backspin': {'spin_duration_ratio': 0.6}
+            'backspin': {'spin_duration_ratio': 0.6},
+            'loop_transition': {'loop_length_bars': 4, 'loop_repeats': 4},
+            'drop_on_the_one': {'fade_ms': 50},
+            'back_and_forth': {'switch_interval_bars': 8, 'num_switches': 2},
+            'drum_roll': {'roll_duration_ratio': 0.5},
+            'thematic_handoff': {'phrase_length_bars': 16}
         }
         
         # Blend parameters
@@ -414,7 +459,12 @@ class HybridTechniqueBlender:
             'staggered_stem_mix': 'Layered',
             'vocal_layering': 'Vocal',
             'double_drop': 'Epic',
-            'backspin': 'Spinning'
+            'backspin': 'Spinning',
+            'loop_transition': 'Looping',
+            'drop_on_the_one': 'Drop',
+            'back_and_forth': 'Switch',
+            'drum_roll': 'Rolling',
+            'thematic_handoff': 'Thematic'
         }
         
         suffixes = {
@@ -428,7 +478,12 @@ class HybridTechniqueBlender:
             'staggered_stem_mix': 'Layer',
             'vocal_layering': 'Blend',
             'double_drop': 'Drop',
-            'backspin': 'Spin'
+            'backspin': 'Spin',
+            'loop_transition': 'Loop',
+            'drop_on_the_one': 'One',
+            'back_and_forth': 'Switch',
+            'drum_roll': 'Roll',
+            'thematic_handoff': 'Handoff'
         }
         
         prefix = prefixes.get(dominant, 'Hybrid')
@@ -535,6 +590,8 @@ class HybridTechniqueBlender:
                                    creativity_level: float = 0.5) -> Dict:
         """
         Suggest a creative technique based on context.
+        Uses presets often for variety and avoids always picking the same combo
+        (e.g. echo_out + filter_sweep + staggered_stem_mix).
         
         Args:
             context: Dict with keys like:
@@ -565,42 +622,64 @@ class HybridTechniqueBlender:
         else:
             energy_direction = 'stable'
         
-        # Select techniques based on context
+        # Often pick a preset for real variety (not just crossfade-heavy combos)
+        preset_names = list(self.hybrid_presets.keys())
+        use_preset_prob = 0.35 + creativity_level * 0.25  # 0.35–0.6
+        if random.random() < use_preset_prob:
+            # Slight context bias: building -> festival_drop more likely; stable -> smooth_operator
+            if energy_direction == 'building':
+                weights_preset = [0.15, 0.45, 0.15, 0.15, 0.1]   # festival_drop boosted
+            elif energy_direction == 'fading':
+                weights_preset = [0.35, 0.1, 0.2, 0.2, 0.15]     # cinematic_blend, creative_chaos
+            else:
+                weights_preset = [0.2, 0.15, 0.35, 0.15, 0.15]   # smooth_operator boosted
+            preset_name = random.choices(preset_names, weights=weights_preset, k=1)[0]
+            hybrid = self.get_preset_hybrid(preset_name)
+            if hybrid is not None:
+                hybrid['name'] = preset_name.replace('_', ' ').title()
+                return hybrid
+        
+        # Rule-based but varied: randomize which techniques we add (avoid same trio every time)
+        base_options = {
+            'building': ['energy_build', 'drop_mix', 'double_drop', 'filter_sweep', 'drum_roll'],
+            'fading': ['echo_out', 'filter_sweep', 'drop_mix', 'bass_swap'],
+            'stable': ['long_blend', 'bass_swap', 'staggered_stem_mix', 'phrase_match', 'vocal_layering', 'loop_transition', 'back_and_forth', 'thematic_handoff']
+        }
+        secondary_pool = ['bass_swap', 'filter_sweep', 'staggered_stem_mix', 'vocal_layering', 'phrase_match', 'drop_mix', 'energy_build', 'loop_transition']
+        bold_options = ['quick_cut', 'backspin', 'double_drop', 'drop_mix', 'drop_on_the_one', 'drum_roll']
+        
         chosen_techniques = []
+        pool = base_options.get(energy_direction, base_options['stable'])
+        # Pick 1–2 from base pool (random order)
+        random.shuffle(pool)
+        for t in pool:
+            if t not in chosen_techniques:
+                chosen_techniques.append(t)
+                if len(chosen_techniques) >= 2:
+                    break
+        if len(chosen_techniques) < 2:
+            chosen_techniques.append('long_blend' if 'long_blend' not in chosen_techniques else pool[0])
         
-        # Base technique based on energy
-        if energy_direction == 'building':
-            chosen_techniques.append('energy_build')
-        elif energy_direction == 'fading':
-            chosen_techniques.append('echo_out')
+        # Add one context-aware secondary (varied, not always filter_sweep + staggered_stem_mix)
+        if has_vocals_a and has_vocals_b and random.random() < 0.6:
+            add = random.choice(['staggered_stem_mix', 'vocal_layering', 'phrase_match'])
+        elif harmonic < 0.6 and random.random() < 0.5:
+            add = 'bass_swap'
+        elif tempo_diff > 3 and random.random() < 0.5:
+            add = random.choice(['filter_sweep', 'energy_build'])
         else:
-            chosen_techniques.append('long_blend')
+            add = random.choice(secondary_pool)
+        if add not in chosen_techniques:
+            chosen_techniques.append(add)
         
-        # Add frequency technique if needed
-        if harmonic < 0.6:
-            chosen_techniques.append('bass_swap')
-        elif tempo_diff > 3:
-            chosen_techniques.append('filter_sweep')
+        # Sometimes add a bold technique for variety (not just safe crossfade)
+        if creativity_level > 0.4 and random.random() < 0.4:
+            bold = random.choice(bold_options)
+            if bold not in chosen_techniques:
+                chosen_techniques.append(bold)
         
-        # Handle vocals
-        if has_vocals_a and has_vocals_b:
-            if 'staggered_stem_mix' not in chosen_techniques:
-                chosen_techniques.append('staggered_stem_mix')
-        elif has_vocals_a:
-            chosen_techniques.append('vocal_layering')
-        
-        # Add creativity variation
-        if creativity_level > 0.7:
-            # More experimental choices
-            experimental_options = ['backspin', 'double_drop', 'drop_mix']
-            random.shuffle(experimental_options)
-            if experimental_options[0] not in chosen_techniques:
-                chosen_techniques.append(experimental_options[0])
-        
-        # Limit to 3 techniques
         chosen_techniques = chosen_techniques[:3]
         
-        # Create the hybrid
         return self.create_hybrid_technique(
             chosen_techniques,
             context={

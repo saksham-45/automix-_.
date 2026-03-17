@@ -45,7 +45,8 @@ class MonteCarloQualityOptimizer:
             'filter_sweep_end': (2000, 10000),  # Hz
             'echo_delay_ms': (200, 800),
             'energy_dip_ratio': (0.2, 0.5),
-            'stem_stagger_offset': (0.1, 0.4)
+            'stem_stagger_offset': (0.1, 0.4),
+            'morph_depth': (0.3, 0.9)  # Added for progressive_morph
         }
     
     # ==================== MONTE CARLO SIMULATION ====================
@@ -597,7 +598,7 @@ class MonteCarloQualityOptimizer:
         rms_ratio = min(rms_a, rms_b) / (max(rms_a, rms_b) + 1e-10)
         predicted_energy = 0.3 + 0.7 * rms_ratio
         
-        # Technique-based predictions
+        # Technique-based predictions (all techniques supported; unknown get 0.0)
         technique_bonus = {
             'long_blend': 0.1,
             'bass_swap': 0.05 if overlap_ratio > 0.3 else -0.05,
@@ -605,7 +606,22 @@ class MonteCarloQualityOptimizer:
             'echo_out': 0.0,
             'quick_cut': -0.1 if spectral_corr < 0.5 else 0.1,
             'staggered_stem_mix': 0.1,
-            'phrase_match': 0.08
+            'phrase_match': 0.08,
+            'loop_transition': 0.05,
+            'drop_on_the_one': -0.05 if spectral_corr < 0.5 else 0.08,
+            'back_and_forth': 0.06,
+            'drum_roll': 0.05,
+            'thematic_handoff': 0.08,
+            'backspin': 0.0,
+            'double_drop': 0.05,
+            'acapella_overlay': 0.08,
+            'modulation': 0.05,
+            'energy_build': 0.05,
+            'breakdown_to_build': 0.05,
+            'drop_mix': 0.0,
+            'partial_stem_separation': 0.06,
+            'vocal_layering': 0.08,
+            'progressive_morph': 0.12,  # New technique bonus
         }
         
         technique_adj = technique_bonus.get(technique, 0.0)

@@ -188,6 +188,65 @@ class HarmonicAnalyzer:
             'reason': reason
         }
     
+    def suggest_modulation_semitones(self,
+                                     key_a: str,
+                                     key_b: str,
+                                     strategy: str = 'match_b',
+                                     max_semitones: int = 2) -> Dict:
+        """
+        Suggest semitone shifts so A and B end up in the same or compatible key.
+        Camelot wheel: one step = circle of 5ths = 7 semitones.
+        
+        Args:
+            key_a: Key of outgoing song (A)
+            key_b: Key of incoming song (B)
+            strategy: 'match_b' (shift A toward B), 'match_a' (shift B toward A), 'midpoint' (both toward middle)
+            max_semitones: Cap absolute shift per segment (e.g. 2 to avoid obvious timbre change)
+        
+        Returns:
+            {'shift_a_semitones': int, 'shift_b_semitones': int, 'reason': str}
+        """
+        camelot_a = self._key_to_camelot(key_a)
+        camelot_b = self._key_to_camelot(key_b)
+        if camelot_a is None or camelot_b is None:
+            return {'shift_a_semitones': 0, 'shift_b_semitones': 0, 'reason': 'invalid_key'}
+        num_a, letter_a = camelot_a
+        num_b, letter_b = camelot_b
+        delta = (num_b - num_a) % 12
+        if delta > 6:
+            delta -= 12
+        # One Camelot step = 7 semitones (circle of 5ths)
+        semitones_a_to_b = (delta * 7) % 12
+        if semitones_a_to_b > 6:
+            semitones_a_to_b -= 12
+        
+        shift_a = 0
+        shift_b = 0
+        reason = 'same_or_compatible'
+        if abs(semitones_a_to_b) <= 0:
+            return {'shift_a_semitones': 0, 'shift_b_semitones': 0, 'reason': reason}
+        
+        if strategy == 'match_b':
+            shift_a = int(np.clip(semitones_a_to_b, -max_semitones, max_semitones))
+            shift_b = 0
+            reason = 'shift_a_toward_b'
+        elif strategy == 'match_a':
+            shift_a = 0
+            shift_b = int(np.clip(-semitones_a_to_b, -max_semitones, max_semitones))
+            reason = 'shift_b_toward_a'
+        else:
+            half = semitones_a_to_b / 2
+            shift_a = int(np.clip(round(half), -max_semitones, max_semitones))
+            shift_b = int(np.clip(round(-half), -max_semitones, max_semitones))
+            reason = 'midpoint'
+        
+        return {
+            'shift_a_semitones': shift_a,
+            'shift_b_semitones': shift_b,
+            'reason': reason,
+            'semitones_a_to_b': semitones_a_to_b
+        }
+    
     def _key_to_camelot(self, key: str) -> Optional[Tuple[int, str]]:
         """Convert key notation to Camelot (number, letter)."""
         # If already Camelot format (e.g., "8B", "3A")

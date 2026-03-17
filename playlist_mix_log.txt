@@ -1,0 +1,1981 @@
+Fetching playlist...
+✓ Found 63 songs. Creating mixes 1–62 (of 1–62).
+
+============================================================
+Mix 1/62: BLACK BALLOONS | 13LACK 13ALLOONZ → Saint Pablo
+============================================================
+Downloading: https://www.youtube.com/watch?v=cr6vtUb4r5s
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 151.0s to 211.0s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=w9rzz4pDFwA
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 47.7s (breakdown)
+  Song B @ 17.9s (intro)
+  Predicted Quality: 0.686
+  Combined Score: 0.731
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 0.800
+    - structural_compatibility: 1.000
+    - tempo_phase_match: 0.300
+    - spectral_clash_risk: 0.404
+    - vocal_overlap_risk: 0.239
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 47.7s
+  → Song B entry: 17.9s
+  Separating stems for advanced processing...
+  ✓ Stem separation model ready (htdemucs) on Metal (GPU)
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.67
+    ✓ Spectral: conflict=0.41
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 13.82s
+  📈 Quality score: 0.54
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.54
+  Confidence: 0.95
+  Recommendation: acceptable_keep
+  Method: Stem orchestration (One Kiss beat → Hell of a Life handoff)
+  Groove Compatibility: 0.67
+  Rhythmic Compatibility: 0.89
+  Frequency Conflict: 0.41
+  Resonance Strength: 1.00
+----------------------------------------
+
+✅ Superhuman mix complete in 32.0s
+   Output duration: 36.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_01.wav
+   Duration: 36.0s
+
+============================================================
+Mix 2/62: Saint Pablo → Devil In A New Dress
+============================================================
+Downloading: https://www.youtube.com/watch?v=w9rzz4pDFwA
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 312.1s to 372.1s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=sk3rpYkiHe8
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 46.6s (breakdown)
+  Song B @ 15.3s (intro)
+  Predicted Quality: 0.643
+  Combined Score: 0.706
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 0.800
+    - structural_compatibility: 1.000
+    - tempo_phase_match: 0.300
+    - spectral_clash_risk: 0.629
+    - vocal_overlap_risk: 0.328
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 46.6s
+  → Song B entry: 15.3s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.58
+    ✓ Spectral: conflict=0.57
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 12.89s
+  📈 Quality score: 0.59
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.59
+  Confidence: 0.95
+  Recommendation: acceptable_keep
+  Technique: Festival Drop (hybrid)
+    Components: energy_build, drop_mix, double_drop
+  Groove Compatibility: 0.58
+  Rhythmic Compatibility: 0.81
+  Frequency Conflict: 0.57
+  Resonance Strength: 1.00
+----------------------------------------
+
+✅ Superhuman mix complete in 28.3s
+   Output duration: 36.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_02.wav
+   Duration: 36.0s
+
+============================================================
+Mix 3/62: Devil In A New Dress → Ghost Town
+============================================================
+Downloading: https://www.youtube.com/watch?v=sk3rpYkiHe8
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 291.9s to 351.9s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=qAsHVwl-MU4
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 49.7s (breakdown)
+  Song B @ 14.3s (intro)
+  Predicted Quality: 0.663
+  Combined Score: 0.758
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 1.000
+    - structural_compatibility: 1.000
+    - tempo_phase_match: 0.300
+    - spectral_clash_risk: 0.722
+    - vocal_overlap_risk: 0.282
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 49.7s
+  → Song B entry: 14.3s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.59
+    ✓ Spectral: conflict=0.67
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 17.22s
+  📈 Quality score: 0.59
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.59
+  Confidence: 0.96
+  Recommendation: acceptable_keep
+  Method: Stem orchestration (One Kiss beat → Hell of a Life handoff)
+  Groove Compatibility: 0.59
+  Rhythmic Compatibility: 0.72
+  Frequency Conflict: 0.67
+  Resonance Strength: 1.00
+----------------------------------------
+
+✅ Superhuman mix complete in 32.9s
+   Output duration: 36.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_03.wav
+   Duration: 36.0s
+
+============================================================
+Mix 4/62: Ghost Town → No More Parties In LA
+============================================================
+Downloading: https://www.youtube.com/watch?v=qAsHVwl-MU4
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 211.4s to 271.4s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=NnMuFqsmYSE
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 38.7s (breakdown)
+  Song B @ 14.8s (intro)
+  Predicted Quality: 0.744
+  Combined Score: 0.846
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 1.000
+    - structural_compatibility: 1.000
+    - tempo_phase_match: 0.600
+    - spectral_clash_risk: 0.532
+    - vocal_overlap_risk: 0.363
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 38.7s
+  → Song B entry: 14.8s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.61
+    ✓ Spectral: conflict=0.70
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 11.23s
+  📈 Quality score: 0.64
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.64
+  Confidence: 0.97
+  Recommendation: acceptable_keep
+  Method: Stem orchestration (One Kiss beat → Hell of a Life handoff)
+  Groove Compatibility: 0.61
+  Rhythmic Compatibility: 0.79
+  Frequency Conflict: 0.70
+  Resonance Strength: 1.00
+----------------------------------------
+
+✅ Superhuman mix complete in 26.5s
+   Output duration: 36.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_04.wav
+   Duration: 36.0s
+
+============================================================
+Mix 5/62: No More Parties In LA → Jesus Walks
+============================================================
+Downloading: https://www.youtube.com/watch?v=NnMuFqsmYSE
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 314.4s to 374.4s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=1fpkdSfPzio
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 51.8s (outro)
+  Song B @ 17.4s (intro)
+  Predicted Quality: 0.690
+  Combined Score: 0.814
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 1.000
+    - structural_compatibility: 1.000
+    - tempo_phase_match: 0.600
+    - spectral_clash_risk: 0.883
+    - vocal_overlap_risk: 0.380
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 51.8s
+  → Song B entry: 17.4s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.59
+    ✓ Spectral: conflict=0.58
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 17.45s
+  📈 Quality score: 0.61
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.61
+  Confidence: 0.96
+  Recommendation: acceptable_keep
+  Method: Stem orchestration (One Kiss beat → Hell of a Life handoff)
+  Groove Compatibility: 0.59
+  Rhythmic Compatibility: 0.88
+  Frequency Conflict: 0.58
+  Resonance Strength: 1.00
+----------------------------------------
+
+✅ Superhuman mix complete in 32.7s
+   Output duration: 36.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_05.wav
+   Duration: 36.0s
+
+============================================================
+Mix 6/62: Jesus Walks → 4 Your Eyez Only
+============================================================
+Downloading: https://www.youtube.com/watch?v=1fpkdSfPzio
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 133.8s to 193.8s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=mgIk98foFOU
+  → song_b.wav (first 60s)
+  ✗ Error downloading: Command '['yt-dlp', '-x', '--audio-format', 'wav', '--audio-quality', '0', '--no-playlist', '--extractor-args', 'youtube:player_client=android', '-o', '/Users/saksham/automix-_./temp_audio/temp_song_b.%(ext)s', 'https://www.youtube.com/watch?v=mgIk98foFOU']' returned non-zero exit status 1.
+ERROR: [youtube] mgIk98foFOU: This video is only available to Music Premium members
+
+✗ Skip mix 6: Command '['yt-dlp', '-x', '--audio-format', 'wav', '--audio-quality', '0', '--no-playlist', '--extractor-args', 'youtube:player_client=android', '-o', '/Users/saksham/automix-_./temp_audio/temp_song_b.%(ext)s', 'https://www.youtube.com/watch?v=mgIk98foFOU']' returned non-zero exit status 1.
+============================================================
+Mix 7/62: 4 Your Eyez Only → Burfict!
+============================================================
+Downloading: https://www.youtube.com/watch?v=mgIk98foFOU
+  → song_a.wav (last 60s)
+  ✗ Error downloading: Command '['yt-dlp', '-x', '--audio-format', 'wav', '--audio-quality', '0', '--no-playlist', '--extractor-args', 'youtube:player_client=android', '-o', '/Users/saksham/automix-_./temp_audio/temp_song_a.%(ext)s', 'https://www.youtube.com/watch?v=mgIk98foFOU']' returned non-zero exit status 1.
+ERROR: [youtube] mgIk98foFOU: This video is only available to Music Premium members
+
+✗ Skip mix 7: Command '['yt-dlp', '-x', '--audio-format', 'wav', '--audio-quality', '0', '--no-playlist', '--extractor-args', 'youtube:player_client=android', '-o', '/Users/saksham/automix-_./temp_audio/temp_song_a.%(ext)s', 'https://www.youtube.com/watch?v=mgIk98foFOU']' returned non-zero exit status 1.
+============================================================
+Mix 8/62: Burfict! → Kingdom Hearts Key
+============================================================
+Downloading: https://www.youtube.com/watch?v=z1xstFz8J8c
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 81.1s to 141.1s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=wQ7pb6aGX5M
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 49.2s (breakdown)
+  Song B @ 55.0s (breakdown)
+  Predicted Quality: 0.586
+  Combined Score: 0.591
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 0.800
+    - structural_compatibility: 0.600
+    - tempo_phase_match: 0.300
+    - spectral_clash_risk: 0.508
+    - vocal_overlap_risk: 0.483
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 49.2s
+  → Song B entry: 55.0s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.59
+    ✓ Spectral: conflict=0.77
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 14.63s
+  📈 Quality score: 0.53
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.53
+  Confidence: 0.86
+  Recommendation: acceptable_keep
+  Method: Stem orchestration (One Kiss beat → Hell of a Life handoff)
+  Groove Compatibility: 0.59
+  Rhythmic Compatibility: 0.48
+  Frequency Conflict: 0.77
+  Resonance Strength: 1.00
+----------------------------------------
+
+✅ Superhuman mix complete in 30.0s
+   Output duration: 26.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_08.wav
+   Duration: 26.0s
+
+============================================================
+Mix 9/62: Kingdom Hearts Key → Through The Wire
+============================================================
+Downloading: https://www.youtube.com/watch?v=wQ7pb6aGX5M
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 145.3s to 205.3s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=AE8y25CcE6s
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 45.4s (breakdown)
+  Song B @ 3.1s (intro)
+  Predicted Quality: 0.596
+  Combined Score: 0.677
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 0.800
+    - structural_compatibility: 1.000
+    - tempo_phase_match: 0.300
+    - spectral_clash_risk: 0.717
+    - vocal_overlap_risk: 0.669
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 45.4s
+  → Song B entry: 3.1s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.60
+    ✓ Spectral: conflict=0.44
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 33.54s
+  📈 Quality score: 0.58
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.58
+  Confidence: 0.96
+  Recommendation: acceptable_keep
+  Technique: Thematic Layer (hybrid)
+    Components: staggered_stem_mix, thematic_handoff
+  Groove Compatibility: 0.60
+  Rhythmic Compatibility: 0.80
+  Frequency Conflict: 0.44
+  Resonance Strength: 0.50
+----------------------------------------
+
+✅ Superhuman mix complete in 48.8s
+   Output duration: 36.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_09.wav
+   Duration: 36.0s
+
+============================================================
+Mix 10/62: Through The Wire → GONE, GONE / THANK YOU
+============================================================
+Downloading: https://www.youtube.com/watch?v=AE8y25CcE6s
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 161.2s to 221.2s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=pVInBRkoKgY
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 47.2s (breakdown)
+  Song B @ 15.3s (intro)
+  Predicted Quality: 0.642
+  Combined Score: 0.745
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 1.000
+    - structural_compatibility: 1.000
+    - tempo_phase_match: 0.300
+    - spectral_clash_risk: 0.815
+    - vocal_overlap_risk: 0.358
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 47.2s
+  → Song B entry: 15.3s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.59
+    ✓ Spectral: conflict=0.30
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 15.19s
+  📈 Quality score: 0.57
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.57
+  Confidence: 0.97
+  Recommendation: acceptable_keep
+  Method: Stem orchestration (One Kiss beat → Hell of a Life handoff)
+  Groove Compatibility: 0.59
+  Rhythmic Compatibility: 0.78
+  Frequency Conflict: 0.30
+  Resonance Strength: 0.45
+----------------------------------------
+
+✅ Superhuman mix complete in 30.7s
+   Output duration: 36.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_10.wav
+   Duration: 36.0s
+
+============================================================
+Mix 11/62: GONE, GONE / THANK YOU → Wesley's Theory
+============================================================
+Downloading: https://www.youtube.com/watch?v=pVInBRkoKgY
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 315.4s to 375.4s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=l9fN-8NjrvI
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 36.9s (breakdown)
+  Song B @ 17.5s (intro)
+  Predicted Quality: 0.682
+  Combined Score: 0.769
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 1.000
+    - structural_compatibility: 1.000
+    - tempo_phase_match: 0.300
+    - spectral_clash_risk: 0.595
+    - vocal_overlap_risk: 0.285
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 36.9s
+  → Song B entry: 17.5s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.63
+    ✓ Spectral: conflict=0.32
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 27.81s
+  📈 Quality score: 0.58
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.58
+  Confidence: 0.99
+  Recommendation: acceptable_keep
+  Method: Stem orchestration (One Kiss beat → Hell of a Life handoff)
+  Groove Compatibility: 0.63
+  Rhythmic Compatibility: 0.76
+  Frequency Conflict: 0.32
+  Resonance Strength: 1.00
+----------------------------------------
+
+✅ Superhuman mix complete in 42.9s
+   Output duration: 36.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_11.wav
+   Duration: 36.0s
+
+============================================================
+Mix 12/62: Wesley's Theory → The Smell Of Death
+============================================================
+Downloading: https://www.youtube.com/watch?v=l9fN-8NjrvI
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 227.4s to 287.4s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=Myo9USuXlVE
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 45.9s (breakdown)
+  Song B @ 2.9s (intro)
+  Predicted Quality: 0.619
+  Combined Score: 0.731
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 1.000
+    - structural_compatibility: 1.000
+    - tempo_phase_match: 0.300
+    - spectral_clash_risk: 0.827
+    - vocal_overlap_risk: 0.573
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 45.9s
+  → Song B entry: 2.9s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.61
+    ✓ Spectral: conflict=0.73
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 10.81s
+  📈 Quality score: 0.60
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.60
+  Confidence: 0.95
+  Recommendation: acceptable_keep
+  Method: Stem orchestration (One Kiss beat → Hell of a Life handoff)
+  Groove Compatibility: 0.61
+  Rhythmic Compatibility: 0.63
+  Frequency Conflict: 0.73
+  Resonance Strength: 1.00
+----------------------------------------
+
+✅ Superhuman mix complete in 26.4s
+   Output duration: 36.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_12.wav
+   Duration: 36.0s
+
+============================================================
+Mix 13/62: The Smell Of Death → Walkin
+============================================================
+Downloading: https://www.youtube.com/watch?v=Myo9USuXlVE
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 20.8s to 80.8s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=WYT4gMDHYZw
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 40.7s (breakdown)
+  Song B @ 52.1s (breakdown)
+  Predicted Quality: 0.600
+  Combined Score: 0.608
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 0.800
+    - structural_compatibility: 0.600
+    - tempo_phase_match: 0.600
+    - spectral_clash_risk: 0.839
+    - vocal_overlap_risk: 0.445
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 40.7s
+  → Song B entry: 52.1s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.60
+    ✓ Spectral: conflict=0.78
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 10.60s
+  📈 Quality score: 0.48
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.48
+  Confidence: 0.86
+  Recommendation: poor_reject
+  Method: Stem orchestration (One Kiss beat → Hell of a Life handoff)
+  Groove Compatibility: 0.60
+  Rhythmic Compatibility: 0.80
+  Frequency Conflict: 0.78
+  Resonance Strength: 0.80
+----------------------------------------
+
+✅ Superhuman mix complete in 26.2s
+   Output duration: 26.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_13.wav
+   Duration: 26.0s
+
+============================================================
+Mix 14/62: Walkin → SIRENS | Z1RENZ
+============================================================
+Downloading: https://www.youtube.com/watch?v=WYT4gMDHYZw
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 220.1s to 280.1s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=RJ-QxLFlYtU
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 37.8s (breakdown)
+  Song B @ 15.5s (intro)
+  Predicted Quality: 0.651
+  Combined Score: 0.711
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 0.800
+    - structural_compatibility: 1.000
+    - tempo_phase_match: 0.300
+    - spectral_clash_risk: 0.599
+    - vocal_overlap_risk: 0.292
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 37.8s
+  → Song B entry: 15.5s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.59
+    ✓ Spectral: conflict=0.55
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 31.76s
+  📈 Quality score: 0.61
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.61
+  Confidence: 0.95
+  Recommendation: acceptable_keep
+  Technique: Deep Blend (hybrid)
+    Components: bass_swap, long_blend, staggered_stem_mix
+  Groove Compatibility: 0.59
+  Rhythmic Compatibility: 0.94
+  Frequency Conflict: 0.55
+  Resonance Strength: 0.20
+----------------------------------------
+
+✅ Superhuman mix complete in 47.3s
+   Output duration: 36.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_14.wav
+   Duration: 36.0s
+
+============================================================
+Mix 15/62: SIRENS | Z1RENZ → Drugs You Should Try It
+============================================================
+Downloading: https://www.youtube.com/watch?v=RJ-QxLFlYtU
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 176.1s to 236.1s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=tbIL-BWhiLo
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 39.7s (breakdown)
+  Song B @ 3.5s (intro)
+  Predicted Quality: 0.767
+  Combined Score: 0.820
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 1.000
+    - structural_compatibility: 1.000
+    - tempo_phase_match: 0.300
+    - spectral_clash_risk: 0.163
+    - vocal_overlap_risk: 0.087
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 39.7s
+  → Song B entry: 3.5s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.60
+    ✓ Spectral: conflict=0.15
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 10.82s
+  📈 Quality score: 0.60
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.60
+  Confidence: 0.97
+  Recommendation: acceptable_keep
+  Technique: Ethereal Mix (hybrid)
+    Components: echo_out, drop_mix, phrase_match
+  Groove Compatibility: 0.60
+  Rhythmic Compatibility: 0.63
+  Frequency Conflict: 0.15
+  Resonance Strength: 0.30
+----------------------------------------
+
+✅ Superhuman mix complete in 26.0s
+   Output duration: 36.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_15.wav
+   Duration: 36.0s
+
+============================================================
+Mix 16/62: Drugs You Should Try It → Stars
+============================================================
+Downloading: https://www.youtube.com/watch?v=tbIL-BWhiLo
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 148.5s to 208.5s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=fGOgJxuwVNs
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 33.7s (breakdown)
+  Song B @ 32.7s (breakdown)
+  Predicted Quality: 0.683
+  Combined Score: 0.674
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 1.000
+    - structural_compatibility: 0.600
+    - tempo_phase_match: 0.300
+    - spectral_clash_risk: 0.275
+    - vocal_overlap_risk: 0.155
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 33.7s
+  → Song B entry: 32.7s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.59
+    ✓ Spectral: conflict=0.32
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 32.19s
+  📈 Quality score: 0.59
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.59
+  Confidence: 0.96
+  Recommendation: acceptable_keep
+  Technique: Ethereal Sweep (hybrid)
+    Components: echo_out, filter_sweep, staggered_stem_mix
+  Groove Compatibility: 0.59
+  Rhythmic Compatibility: 0.35
+  Frequency Conflict: 0.32
+  Resonance Strength: 1.00
+----------------------------------------
+
+✅ Superhuman mix complete in 47.7s
+   Output duration: 36.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_16.wav
+   Duration: 36.0s
+
+============================================================
+Mix 17/62: Stars → SORRY NOT SORRY
+============================================================
+Downloading: https://www.youtube.com/watch?v=fGOgJxuwVNs
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 198.3s to 258.3s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=kh7jlleDZLc
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+Fetching playlist...
+✓ Found 63 songs. Creating mixes 17–62 (of 1–62).
+
+============================================================
+Mix 17/62: Stars → SORRY NOT SORRY
+============================================================
+Downloading: https://www.youtube.com/watch?v=fGOgJxuwVNs
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 198.3s to 258.3s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=kh7jlleDZLc
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 49.8s (breakdown)
+  Song B @ 17.9s (intro)
+  Predicted Quality: 0.597
+  Combined Score: 0.678
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 0.800
+    - structural_compatibility: 1.000
+    - tempo_phase_match: 0.300
+    - spectral_clash_risk: 0.827
+    - vocal_overlap_risk: 0.487
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 49.8s
+  → Song B entry: 17.9s
+  Separating stems for advanced processing...
+  ✓ Stem separation model ready (htdemucs) on Metal (GPU)
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.66
+    ✓ Spectral: conflict=0.51
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 31.65s
+  📈 Quality score: 0.60
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.60
+  Confidence: 0.96
+  Recommendation: acceptable_keep
+  Technique: Deep Immersion (hybrid)
+    Components: long_blend, vocal_layering, bass_swap
+  Groove Compatibility: 0.66
+  Rhythmic Compatibility: 0.69
+  Frequency Conflict: 0.51
+  Resonance Strength: 0.90
+----------------------------------------
+
+✅ Superhuman mix complete in 48.7s
+   Output duration: 36.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_17.wav
+   Duration: 36.0s
+
+============================================================
+Mix 18/62: SORRY NOT SORRY → PRIDE.
+============================================================
+Downloading: https://www.youtube.com/watch?v=kh7jlleDZLc
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 146.1s to 206.1s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=J87pJrxvJ5E
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 55.0s (outro)
+  Song B @ 3.9s (intro)
+  Predicted Quality: 0.619
+  Combined Score: 0.732
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 1.000
+    - structural_compatibility: 1.000
+    - tempo_phase_match: 0.300
+    - spectral_clash_risk: 0.979
+    - vocal_overlap_risk: 0.338
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 55.0s
+  → Song B entry: 3.9s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.60
+    ✓ Spectral: conflict=0.38
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 10.57s
+  📈 Quality score: 0.61
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.61
+  Confidence: 0.96
+  Recommendation: acceptable_keep
+  Method: Stem orchestration (One Kiss beat → Hell of a Life handoff)
+  Groove Compatibility: 0.60
+  Rhythmic Compatibility: 0.59
+  Frequency Conflict: 0.38
+  Resonance Strength: 1.00
+----------------------------------------
+
+✅ Superhuman mix complete in 24.5s
+   Output duration: 36.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_18.wav
+   Duration: 36.0s
+
+============================================================
+Mix 19/62: PRIDE. → Feeling This
+============================================================
+Downloading: https://www.youtube.com/watch?v=J87pJrxvJ5E
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 215.2s to 275.2s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=7qaG1WeuVlc
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 56.6s (outro)
+  Song B @ 12.7s (intro)
+  Predicted Quality: 0.711
+  Combined Score: 0.783
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 1.000
+    - structural_compatibility: 1.000
+    - tempo_phase_match: 0.300
+    - spectral_clash_risk: 0.339
+    - vocal_overlap_risk: 0.377
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 56.6s
+  → Song B entry: 12.7s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.60
+    ✓ Spectral: conflict=0.36
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 15.01s
+  📈 Quality score: 0.64
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.64
+  Confidence: 0.95
+  Recommendation: acceptable_keep
+  Technique: Ethereal Sweep (hybrid)
+    Components: echo_out, filter_sweep, phrase_match
+  Groove Compatibility: 0.60
+  Rhythmic Compatibility: 0.68
+  Frequency Conflict: 0.36
+  Resonance Strength: 1.00
+----------------------------------------
+
+✅ Superhuman mix complete in 28.7s
+   Output duration: 36.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_19.wav
+   Duration: 36.0s
+
+============================================================
+Mix 20/62: Feeling This → Two Words
+============================================================
+Downloading: https://www.youtube.com/watch?v=7qaG1WeuVlc
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 112.7s to 172.7s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=cgo2IKS4inU
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+  No transition candidates found; using default overlap points.
+  → Transition: 16.0s
+  → Song A exit: 36.0s
+  → Song B entry: 6.0s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.81
+    ✓ Spectral: conflict=0.30
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 10.55s
+  📈 Quality score: 0.63
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.63
+  Confidence: 0.96
+  Recommendation: acceptable_keep
+  Method: Stem orchestration (One Kiss beat → Hell of a Life handoff)
+  Groove Compatibility: 0.81
+  Rhythmic Compatibility: 0.71
+  Frequency Conflict: 0.30
+  Resonance Strength: 1.00
+----------------------------------------
+
+✅ Superhuman mix complete in 18.9s
+   Output duration: 36.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_20.wav
+   Duration: 36.0s
+
+============================================================
+Mix 21/62: Two Words → HAZARD DUTY PAY!
+============================================================
+Downloading: https://www.youtube.com/watch?v=cgo2IKS4inU
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 206.2s to 266.2s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=jpVA8K4-ee0
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 35.0s (breakdown)
+  Song B @ 0.1s (intro)
+  Predicted Quality: 0.607
+  Combined Score: 0.684
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 0.800
+    - structural_compatibility: 1.000
+    - tempo_phase_match: 0.300
+    - spectral_clash_risk: 0.730
+    - vocal_overlap_risk: 0.541
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 35.0s
+  → Song B entry: 0.1s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.66
+    ✓ Spectral: conflict=0.51
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 25.76s
+  📈 Quality score: 0.59
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.59
+  Confidence: 0.97
+  Recommendation: acceptable_keep
+  Method: Stem orchestration (One Kiss beat → Hell of a Life handoff)
+  Groove Compatibility: 0.66
+  Rhythmic Compatibility: 0.93
+  Frequency Conflict: 0.51
+  Resonance Strength: 1.00
+----------------------------------------
+
+✅ Superhuman mix complete in 37.9s
+   Output duration: 36.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_21.wav
+   Duration: 36.0s
+
+============================================================
+Mix 22/62: HAZARD DUTY PAY! → 8am in Charlotte
+============================================================
+Downloading: https://www.youtube.com/watch?v=jpVA8K4-ee0
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 97.2s to 157.2s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=ttVCIx5xvMQ
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 43.7s (breakdown)
+  Song B @ 5.2s (intro)
+  Predicted Quality: 0.688
+  Combined Score: 0.733
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 0.800
+    - structural_compatibility: 1.000
+    - tempo_phase_match: 0.300
+    - spectral_clash_risk: 0.394
+    - vocal_overlap_risk: 0.227
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 43.7s
+  → Song B entry: 5.2s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.64
+    ✓ Spectral: conflict=0.13
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 15.10s
+  📈 Quality score: 0.59
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.59
+  Confidence: 0.98
+  Recommendation: acceptable_keep
+  Method: Stem orchestration (One Kiss beat → Hell of a Life handoff)
+  Groove Compatibility: 0.64
+  Rhythmic Compatibility: 0.60
+  Frequency Conflict: 0.13
+  Resonance Strength: 1.00
+----------------------------------------
+
+✅ Superhuman mix complete in 29.1s
+   Output duration: 36.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_22.wav
+   Duration: 36.0s
+
+============================================================
+Mix 23/62: 8am in Charlotte → Survival Tactics
+============================================================
+Downloading: https://www.youtube.com/watch?v=ttVCIx5xvMQ
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 207.0s to 267.0s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=Re-rt1a5bKg
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 27.9s (breakdown)
+  Song B @ 0.0s (intro)
+  Predicted Quality: 0.775
+  Combined Score: 0.825
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 0.800
+    - structural_compatibility: 1.000
+    - tempo_phase_match: 0.600
+    - spectral_clash_risk: 0.254
+    - vocal_overlap_risk: 0.165
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 27.9s
+  → Song B entry: 0.0s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.61
+    ✓ Spectral: conflict=0.34
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 25.59s
+  📈 Quality score: 0.57
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.57
+  Confidence: 0.97
+  Recommendation: acceptable_keep
+  Method: Stem orchestration (One Kiss beat → Hell of a Life handoff)
+  Groove Compatibility: 0.61
+  Rhythmic Compatibility: 0.84
+  Frequency Conflict: 0.34
+  Resonance Strength: 1.00
+----------------------------------------
+
+✅ Superhuman mix complete in 39.5s
+   Output duration: 36.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_23.wav
+   Duration: 36.0s
+
+============================================================
+Mix 24/62: Survival Tactics → THank god 4 me
+============================================================
+Downloading: https://www.youtube.com/watch?v=Re-rt1a5bKg
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 142.8s to 202.8s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=BQDlhTF14f8
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 20.6s (breakdown)
+  Song B @ 53.5s (breakdown)
+  Predicted Quality: 0.582
+  Combined Score: 0.621
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 1.000
+    - structural_compatibility: 0.600
+    - tempo_phase_match: 0.300
+    - spectral_clash_risk: 0.757
+    - vocal_overlap_risk: 0.440
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 20.6s
+  → Song B entry: 53.5s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.69
+    ✓ Spectral: conflict=0.29
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 14.59s
+  📈 Quality score: 0.48
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.48
+  Confidence: 0.85
+  Recommendation: poor_reject
+  Technique: Festival Drop (hybrid)
+    Components: energy_build, drop_mix, double_drop
+  Groove Compatibility: 0.69
+  Rhythmic Compatibility: 0.80
+  Frequency Conflict: 0.29
+  Resonance Strength: 0.95
+----------------------------------------
+
+✅ Superhuman mix complete in 26.3s
+   Output duration: 20.6s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_24.wav
+   Duration: 20.6s
+
+============================================================
+Mix 25/62: THank god 4 me → Darling, I
+============================================================
+Downloading: https://www.youtube.com/watch?v=BQDlhTF14f8
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 117.3s to 177.3s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=ZWDoUsxpkKE
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 18.3s (breakdown)
+  Song B @ 12.3s (intro)
+  Predicted Quality: 0.625
+  Combined Score: 0.727
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 1.000
+    - structural_compatibility: 1.000
+    - tempo_phase_match: 0.300
+    - spectral_clash_risk: 0.891
+    - vocal_overlap_risk: 0.412
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 18.3s
+  → Song B entry: 12.3s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.75
+    ✓ Spectral: conflict=0.49
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 25.63s
+  📈 Quality score: 0.55
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.55
+  Confidence: 0.96
+  Recommendation: acceptable_keep
+  Method: Stem orchestration (One Kiss beat → Hell of a Life handoff)
+  Groove Compatibility: 0.75
+  Rhythmic Compatibility: 0.66
+  Frequency Conflict: 0.49
+  Resonance Strength: 1.00
+----------------------------------------
+
+✅ Superhuman mix complete in 35.9s
+   Output duration: 28.3s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_25.wav
+   Duration: 28.3s
+
+============================================================
+Mix 26/62: Darling, I → JPEGULTRA!
+============================================================
+Downloading: https://www.youtube.com/watch?v=ZWDoUsxpkKE
+  → song_a.wav (last 60s)
+  Extracting last 60s (from 193.8s to 253.8s)...
+  ✓ Downloaded: 10.1 MB
+Downloading: https://www.youtube.com/watch?v=UCiaMcgc4iQ
+  → song_b.wav (first 60s)
+  Trimming to first 60 seconds...
+  ✓ Downloaded: 10.1 MB
+
+Creating mix...
+
+============================================================
+🚀 SUPERHUMAN MIXING ENGINE
+============================================================
+
+[1/4] Loading audio...
+[2/4] Analyzing songs...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+    Detecting key...
+    Detecting tempo...
+    Analyzing structure...
+[3/4] Finding optimal transition points...
+Analyzing Song A for transition out points...
+Analyzing Song B for transition in points...
+Evaluating top candidates with quality prediction...
+
+✓ Best transition found (with quality prediction):
+  Song A @ 28.2s (breakdown)
+  Song B @ 17.2s (intro)
+  Predicted Quality: 0.577
+  Combined Score: 0.666
+  Quality Factors:
+    - harmonic_compatibility: 0.700
+    - energy_compatibility: 0.800
+    - structural_compatibility: 1.000
+    - tempo_phase_match: 0.300
+    - spectral_clash_risk: 0.820
+    - vocal_overlap_risk: 0.698
+    - beat_alignment_quality: 1.000
+  → Transition: 16.0s
+  → Song A exit: 28.2s
+  → Song B entry: 17.2s
+  Separating stems for advanced processing...
+[4/4] 🎛️ Running Superhuman Mix...
+  🔬 Stage 1: Superhuman Analysis...
+    ✓ Micro-timing: groove=0.58
+    ✓ Spectral: conflict=0.64
+    ⏱️ Analysis took 0.2s
+  🎨 Stage 2: Creative Technique Selection...
+  📊 Stage 3: Quality Prediction...
+  🎭 Stage 4: Stem Orchestration...
+  🌈 Stage 5: Spectral Processing...
+    ✓ Using original segments (spectral info for reference)
+  🎵 Stage 6: Executing Transition...
+  ✅ Stage 7: Quality Evaluation...
+  ⏱️ Total processing time: 33.47s
+  📈 Quality score: 0.61
+
+----------------------------------------
+📊 SUPERHUMAN MIX RESULTS:
+  Quality Score: 0.61
+  Confidence: 0.97
+  Recommendation: acceptable_keep
+  Technique: Looping Layer (hybrid)
+    Components: staggered_stem_mix, loop_transition, energy_build
+  Groove Compatibility: 0.58
+  Rhythmic Compatibility: 0.67
+  Frequency Conflict: 0.64
+  Resonance Strength: 1.00
+----------------------------------------
+
+✅ Superhuman mix complete in 46.6s
+   Output duration: 36.0s
+✅ Saved: /Users/saksham/automix-_./playlist_mix_26.wav
+   Duration: 36.0s
+
+============================================================
+Mix 27/62: JPEGULTRA! → reincarnated
+============================================================
+Downloading: https://www.youtube.com/watch?v=UCiaMcgc4iQ
+  → song_a.wav (last 60s)

@@ -441,8 +441,11 @@ class StructureAnalyzer:
             if phrase.energy_trend == 'rising':
                 points.append(phrase.start_sec)
         
-        # Convert to list of floats (ensure no numpy arrays)
-        return sorted([float(p) for p in set(points)])
+        # Convert to list of floats (set() fails on numpy ndarray; ensure hashable scalars)
+        def _to_float(p):
+            a = np.asarray(p)
+            return float(a.flat[0]) if a.size > 0 else 0.0
+        return sorted(list(set(_to_float(p) for p in points)))
     
     def _find_best_mix_out_points(self, sections: List[SongSection], phrases: List[MusicalPhrase]) -> List[float]:
         """Find best points to mix OUT OF this song."""
@@ -459,6 +462,9 @@ class StructureAnalyzer:
             if phrase.energy_trend in ['falling', 'stable']:
                 points.append(phrase.end_sec)
         
-        # Convert to list of floats (ensure no numpy arrays)
-        return sorted([float(p) for p in set(points)])
-
+        # Convert to list of floats (set() fails on numpy ndarray; ensure hashable scalars)
+        def _to_float(p):
+            a = np.asarray(p)
+            return float(a.flat[0]) if a.size > 0 else 0.0
+        return sorted(list(set(_to_float(p) for p in points)))
+        

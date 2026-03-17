@@ -7,6 +7,7 @@ Context-aware transition technique selection based on:
 - Energy flow
 - Genre/style
 """
+import random
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 
@@ -166,12 +167,53 @@ class TransitionStrategist:
             energy_direction='up',
             harmonic_requirements='compatible',
             structure_preference=['breakdown', 'build']
+        ),
+        'drop_on_the_one': TransitionTechnique(
+            name='drop_on_the_one',
+            duration_bars=2,
+            description='Cut A and bring B in exactly on the first beat of a bar (instant cut on downbeat)',
+            energy_direction='up',
+            harmonic_requirements='any',
+            structure_preference=['drop', 'chorus']
+        ),
+        'back_and_forth': TransitionTechnique(
+            name='back_and_forth',
+            duration_bars=24,
+            description='Alternating A and B every N bars for call-and-response, then settle on B',
+            energy_direction='maintain',
+            harmonic_requirements='compatible',
+            structure_preference=['verse', 'chorus']
+        ),
+        'drum_roll': TransitionTechnique(
+            name='drum_roll',
+            duration_bars=8,
+            description='Short percussive build/roll then cut to B on a strong beat',
+            energy_direction='up',
+            harmonic_requirements='any',
+            structure_preference=['build', 'drop', 'chorus']
+        ),
+        'thematic_handoff': TransitionTechnique(
+            name='thematic_handoff',
+            duration_bars=24,
+            description='Phrase-aligned blend when thematic/lyric compatibility is present',
+            energy_direction='maintain',
+            harmonic_requirements='compatible',
+            structure_preference=['verse', 'chorus', 'breakdown']
+        ),
+        'washout': TransitionTechnique(
+            name='washout',
+            duration_bars=12,
+            description='Big reverb wash and high-pass filter exit',
+            energy_direction='down',
+            harmonic_requirements='any',
+            structure_preference=['outro', 'chorus', 'verse']
         )
     }
     
     def __init__(self):
         self.harmonic_analyzer = HarmonicAnalyzer()
         self.structure_analyzer = StructureAnalyzer()
+        self.history = []  # Track last 3 techniques used
     
     def select_technique(self,
                         key_a: str,
@@ -183,7 +225,8 @@ class TransitionStrategist:
                         energy_a: float,
                         energy_b: float,
                         clash_score: float,
-                        vocal_overlap_risk: float = 0.5) -> Dict:
+                        vocal_overlap_risk: float = 0.5,
+                        use_history: bool = True) -> Dict:
         """
         Select optimal transition technique based on context.
         
@@ -210,6 +253,17 @@ class TransitionStrategist:
         
         for tech_name, tech in self.TECHNIQUES.items():
             score = 0.0
+            
+            # --- Variety Penalty ---
+            if use_history and tech_name in self.history:
+                # Penalize based on how recently it was used
+                # Index 0 is most recent, etc.
+                try:
+                    recency = self.history.index(tech_name)
+                    penalty = 0.4 if recency == 0 else (0.2 if recency == 1 else 0.1)
+                    score -= penalty
+                except ValueError:
+                    pass
             
             # Harmonic compatibility
             if tech.harmonic_requirements == 'compatible' and keys_compatible:
@@ -269,11 +323,59 @@ class TransitionStrategist:
             if tech_name == 'breakdown_to_build' and section_a == 'breakdown' and section_b == 'build':
                 score += 0.4  # Perfect match for breakdown-to-build
             
+            # loop_transition: bridge when structure fits and energy is maintain
+            if tech_name == 'loop_transition' and energy_direction == 'maintain':
+                if section_a in ['verse', 'chorus', 'breakdown'] or section_b in ['verse', 'chorus', 'breakdown']:
+                    score += 0.25
+                if 0.3 <= clash_score <= 0.6:
+                    score += 0.15  # Bridge can ease moderate clashes
+            
+            # drop_on_the_one: up energy, drop/chorus
+            if tech_name == 'drop_on_the_one' and energy_direction == 'up' and section_b in ['drop', 'chorus']:
+                score += 0.35
+            
+            # back_and_forth: maintain, verse/chorus, compatible keys
+            if tech_name == 'back_and_forth' and energy_direction == 'maintain' and keys_compatible:
+                if section_a in ['verse', 'chorus'] and section_b in ['verse', 'chorus']:
+                    score += 0.3
+            
+            # drum_roll: up energy, build/drop/chorus
+            if tech_name == 'drum_roll' and energy_direction == 'up' and section_b in ['build', 'drop', 'chorus']:
+                score += 0.3
+
+            # washout: down energy, versatile exit
+            if tech_name == 'washout':
+                if energy_direction == 'down':
+                    score += 0.4
+                if section_a in ['outro', 'chorus']:
+                    score += 0.2
+            
             technique_scores[tech_name] = score
         
-        # Select best technique
-        best_technique = max(technique_scores, key=technique_scores.get)
+        # Creative diversity: top-k selection — choose randomly among top 3 techniques by score
+        sorted_techs = sorted(technique_scores.keys(), key=lambda t: technique_scores[t], reverse=True)
+        
+        # Dynamically adjust top_k based on score gap
+        top_k = 3
+        if len(sorted_techs) > 1:
+            score_gap = technique_scores[sorted_techs[0]] - technique_scores[sorted_techs[1]]
+            if score_gap > 0.4: # One technique is clearly much better
+                top_k = 2
+                
+        top_techniques = sorted_techs[:top_k]
+        top_scores = [max(0.01, technique_scores[t]) for t in top_techniques]
+        
+        # Weights proportional to score (so best still favored but runner-ups get a chance)
+        total = sum(top_scores)
+        weights = [s / total for s in top_scores]
+        best_technique = random.choices(top_techniques, weights=weights, k=1)[0]
         best_score = technique_scores[best_technique]
+        
+        # Update history
+        if use_history:
+            self.history.insert(0, best_technique)
+            if len(self.history) > 3:
+                self.history.pop()
         
         tech = self.TECHNIQUES[best_technique]
         
@@ -365,10 +467,34 @@ class TransitionStrategist:
             params['loop_length_bars'] = 4  # 4-bar loop
             params['loop_repeats'] = 4  # Repeat 4 times
             params['loop_fade'] = True
+            params['loop_portion_ratio'] = 0.4  # First 40% is repeated loop, then crossfade
         
         elif technique == 'breakdown_to_build':
             params['breakdown_ratio'] = 0.4  # First 40% is breakdown
             params['build_ratio'] = 0.6  # Last 60% is build
+        
+        elif technique == 'drop_on_the_one':
+            params['cut_on_downbeat'] = True
+            params['fade_ms'] = 50
+        
+        elif technique == 'back_and_forth':
+            params['switch_interval_bars'] = 8
+            params['num_switches'] = 2
+        
+        elif technique == 'drum_roll':
+            params['roll_duration_ratio'] = 0.5
+            params['filter_sweep'] = True  # High-pass A during roll
+        
+        elif technique == 'thematic_handoff':
+            params['phrase_length_bars'] = 16
+            params['align_to_phrase'] = True
+
+        elif technique == 'washout':
+            params['reverb_size'] = 0.8
+            params['reverb_decay'] = 0.7
+            params['filter_start_hz'] = 20
+            params['filter_end_hz'] = 5000
+            params['wet_mix'] = 0.7
         
         return params
 

@@ -1,88 +1,79 @@
 #!/usr/bin/env python3
-"""Flask server: paste two YouTube links, get a mix WAV to play on the page."""
-import threading
-import uuid
+"""Flask server: YouTube Playlist AutoMixer"""
+import sys
 from pathlib import Path
+from flask import Flask, jsonify, render_template, request, send_from_directory
 
-from flask import Flask, jsonify, render_template, request, send_file
-
-# Project root = directory containing this file
+# Project root setup
 PROJECT_ROOT = Path(__file__).resolve().parent
-MIXES_DIR = PROJECT_ROOT / "static" / "mixes"
-MIXES_DIR.mkdir(parents=True, exist_ok=True)
+sys.path.insert(0, str(PROJECT_ROOT))
+CACHE_DIR = PROJECT_ROOT / "data" / "cache" / "stream"
+
+# Import StreamManager (it will be available since we added PROJECT_ROOT to sys.path)
+# We need to make sure src.stream_manager is importable.
+# Since PROJET_ROOT contains src/, "import src.stream_manager" works.
+from src.stream_manager import manager
 
 app = Flask(__name__, template_folder=str(PROJECT_ROOT / "templates"), static_folder=str(PROJECT_ROOT / "static"))
-app.config["MAX_CONTENT_LENGTH"] = 1024  # form field size limit (URLs only)
-
-# In-memory job store: job_id -> {"status": "pending"|"done"|"error", "path": Path|None, "error": str|None}
-jobs = {}
-_lock = threading.Lock()
-
-
-def _run_mix(job_id: str, url1: str, url2: str) -> None:
-    path = MIXES_DIR / f"{job_id}.wav"
-    try:
-        from scripts.mix_runner import run_youtube_mix
-        run_youtube_mix(url1, url2, path)
-        with _lock:
-            jobs[job_id]["status"] = "done"
-            jobs[job_id]["path"] = path
-    except Exception as e:
-        with _lock:
-            jobs[job_id]["status"] = "error"
-            jobs[job_id]["error"] = str(e)
-        if path.exists():
-            try:
-                path.unlink()
-            except Exception:
-                pass
-
+app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024  # 1MB for requests
 
 @app.route("/")
 def index():
-    return render_template("mix_index.html")
+    return render_template("player.html")
 
+@app.route("/api/playlist", methods=["POST"])
+def start_playlist():
+    url = (request.json.get("url") or "").strip()
+    if not url:
+        return jsonify({"error": "URL required"}), 400
+    
+    try:
+        morph_settings = request.json.get("morph_settings", {})
+        sid = manager.start_session(url)
+        session = manager.get_session(sid)
+        if session and morph_settings:
+            session.morph_depth = float(morph_settings.get("depth", session.morph_depth))
+            session.morph_strategy = morph_settings.get("strategy", session.morph_strategy)
+            session.enable_morphing = bool(morph_settings.get("enabled", session.enable_morphing))
+            
+        return jsonify({"session_id": sid})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-@app.route("/mix", methods=["POST"])
-def start_mix():
-    url1 = (request.form.get("url1") or "").strip()
-    url2 = (request.form.get("url2") or "").strip()
-    if not url1 or not url2:
-        return jsonify({"error": "Both URL 1 and URL 2 are required"}), 400
-    job_id = str(uuid.uuid4())
-    with _lock:
-        jobs[job_id] = {"status": "pending", "path": None, "error": None}
-    thread = threading.Thread(target=_run_mix, args=(job_id, url1, url2))
-    thread.daemon = True
-    thread.start()
-    return jsonify({"job_id": job_id})
+@app.route("/api/session/<sid>")
+def get_session_status(sid):
+    session = manager.get_session(sid)
+    if not session:
+        return jsonify({"error": "Session not found"}), 404
+        
+    # Drain the queue to get new chunks
+    new_chunks = []
+    while not session.chunks_queue.empty():
+        chunk = session.chunks_queue.get()
+        if chunk is None: # Sentinel
+            session.status = "finished"
+            continue
+        session.processed_chunks.append(chunk)
 
+    # Convert chunks to API format
+    chunks_data = []
+    for c in session.processed_chunks:
+        chunks_data.append({
+            "id": c["id"],
+            "type": c["type"],
+            "title": c.get("title", ""),
+            "duration": c["duration"],
+            "url": f"/api/audio/{Path(c['path']).name}"
+        })
+        
+    return jsonify({
+        "status": session.status,
+        "chunks": chunks_data
+    })
 
-@app.route("/mix/status/<job_id>")
-def mix_status(job_id):
-    with _lock:
-        job = jobs.get(job_id)
-    if not job:
-        return jsonify({"error": "Job not found"}), 404
-    out = {"status": job["status"]}
-    if job["status"] == "done":
-        out["output_url"] = f"/mix/output/{job_id}"
-    if job["status"] == "error":
-        out["error"] = job["error"]
-    return jsonify(out)
-
-
-@app.route("/mix/output/<job_id>")
-def mix_output(job_id):
-    with _lock:
-        job = jobs.get(job_id)
-    if not job or job["status"] != "done" or not job.get("path"):
-        return jsonify({"error": "Mix not ready or not found"}), 404
-    path = Path(job["path"])
-    if not path.exists():
-        return jsonify({"error": "File missing"}), 404
-    return send_file(path, mimetype="audio/wav", as_attachment=False, download_name=f"mix_{job_id[:8]}.wav")
-
+@app.route("/api/audio/<filename>")
+def serve_audio(filename):
+    return send_from_directory(CACHE_DIR, filename)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001, debug=False, threaded=True)
+    app.run(host="0.0.0.0", port=5005, debug=False, threaded=True, use_reloader=False)

@@ -111,21 +111,57 @@ class SmartTransitionFinder:
             frame_energy[i] = np.mean(energy[start:end])
             frame_times[i] = (start + frame_length // 2) / sr
         
+        # Vocal presence proxy: mid-band (300-3000 Hz) energy ratio - prefer points where vocals likely present
+        y_mono = np.mean(y, axis=1) if y.ndim > 1 else y
+        try:
+            D = np.abs(librosa.stft(y_mono, hop_length=self.hop_length, n_fft=2048))
+            freqs = librosa.fft_frequencies(sr=sr, n_fft=2048)
+            vocal_mask = (freqs >= 300) & (freqs <= 3000)
+            vocal_energy = np.sum(D[vocal_mask, :], axis=0)
+            total_energy = np.sum(D, axis=0) + 1e-12
+            vocal_ratio_raw = vocal_energy / total_energy
+            # Map to our frame grid
+            vocal_ratio_frames = np.zeros(n_frames)
+            for i in range(n_frames):
+                t_center = frame_times[i]
+                frame_idx = min(int(t_center * sr / self.hop_length), len(vocal_ratio_raw) - 1)
+                vocal_ratio_frames[i] = float(vocal_ratio_raw[max(0, frame_idx)])
+        except Exception:
+            vocal_ratio_frames = np.ones(n_frames) * 0.5  # Neutral if compute fails
+        
+        # Gap detection: local minima in energy (brief dips = natural mix points between phrases)
+        frame_dt = (frame_times[1] - frame_times[0]) if len(frame_times) > 1 and frame_times[1] > frame_times[0] else 0.25
+        gap_window = max(3, min(int(2.0 / frame_dt), n_frames // 4))
+        is_gap = np.zeros(n_frames, dtype=bool)
+        for i in range(gap_window, n_frames - gap_window):
+            local_min = np.argmin(frame_energy[i-gap_window:i+gap_window+1]) == gap_window
+            is_gap[i] = local_min
+        
         # Find structural segments (enhanced for full song analysis)
         segments = self._find_structural_segments_intelligent(y, sr, frame_times, frame_energy, duration)
         
         # Find good transition points based on type
         candidates = []
         
-        if is_outgoing:
-            # Good "out" points: endings, breakdowns, energy dips, last 50% of song
-            search_start = duration * 0.3  # Start searching from 30% into song
-            search_end = duration * 0.95   # Up to 95%
+        # Detect silent outro (never transition in/out of silence)
+        tail_sec = min(8.0, duration * 0.15)  # Last 8s or 15%
+        tail_frames = [i for i in range(n_frames) if frame_times[i] >= duration - tail_sec]
+        tail_energy = float(np.mean(frame_energy[tail_frames])) if tail_frames else 1.0
+        silence_threshold = max(0.02, np.percentile(frame_energy, 2))  # Bottom 2% = silence
+        has_silent_outro = tail_energy < silence_threshold * 3 and tail_energy < 0.1
+        if has_silent_outro and len(tail_frames) > 0:
+            search_end_outro = max(duration * 0.5, duration - tail_sec - 2.0)  # End before silence
         else:
-            # Good "in" points: can be ANYWHERE in song (intros, build-ups, drops, choruses)
-            # Allow transitions INTO any section of Song B, not just early parts
+            search_end_outro = duration * 0.95
+        
+        if is_outgoing:
+            # Good "out" points: breakdowns, low activity, repetitive sections - NEVER silent regions
+            search_start = duration * 0.3  # Start from 30% into song
+            search_end = search_end_outro   # Never extend into silent outro
+        else:
+            # Good "in" points: can be anywhere (intros, build-ups, drops, choruses)
             search_start = 0
-            search_end = duration * 0.95  # Search almost entire song (leave small buffer at very end)
+            search_end = search_end_outro  # Avoid silent tail
         
         # Sample points at beat positions in search region
         search_beats = [bt for bt in beat_times if search_start <= bt <= search_end]
@@ -135,13 +171,19 @@ class SmartTransitionFinder:
             if beat_idx >= len(frame_energy):
                 continue
             
-            energy_val = frame_energy[beat_idx]
+            energy_val = float(frame_energy[beat_idx])
+            # Reject silent regions - never transition in/out of near-silence
+            if energy_val < silence_threshold * 2 or (is_outgoing and energy_val < 0.03):
+                continue
             
-            # Energy trend
+            # Energy trend + low-activity (repetitive) detection
             window = 8  # frames
+            activity_variance = 0.5  # default
             if beat_idx >= window and beat_idx < len(frame_energy) - window:
                 energy_before = np.mean(frame_energy[beat_idx-window:beat_idx])
                 energy_after = np.mean(frame_energy[beat_idx:beat_idx+window])
+                window_energies = frame_energy[max(0,beat_idx-window):beat_idx+window]
+                activity_variance = np.var(window_energies) if len(window_energies) > 1 else 0
                 if energy_after > energy_before * 1.2:
                     trend = 'rising'
                 elif energy_after < energy_before * 0.8:
@@ -156,10 +198,15 @@ class SmartTransitionFinder:
             # Structural label
             label = self._get_segment_label(beat_time, segments, duration, is_outgoing)
             
-            # Score this point
+            vocal_presence = float(vocal_ratio_frames[beat_idx]) if beat_idx < len(vocal_ratio_frames) else 0.5
+            at_gap = bool(is_gap[beat_idx]) if beat_idx < len(is_gap) else False
+            in_last_stage = beat_time >= duration * 0.55  # Last ~45% of song
+            
+            # Score this point (prefer vocals present; in last stage prefer gaps when beat playing)
             score = self._score_transition_point_candidate(
                 beat_time, energy_val, trend, label,
-                is_outgoing, duration, beat_times
+                is_outgoing, duration, beat_times,
+                vocal_presence=vocal_presence, at_gap=at_gap, in_last_stage=in_last_stage
             )
             
             if score > 0.3:  # Threshold
@@ -314,22 +361,31 @@ class SmartTransitionFinder:
                                          label: str,
                                          is_outgoing: bool,
                                          duration: float,
-                                         beat_times: np.ndarray) -> float:
-        """Score a single transition point candidate."""
+                                         beat_times: np.ndarray,
+                                         vocal_presence: float = 0.5,
+                                         at_gap: bool = False,
+                                         in_last_stage: bool = False) -> float:
+        """Score a single transition point candidate.
+        Prefer points with vocals; in last stage prefer gaps (beat playing, natural mix point)."""
         score = 0.5  # Base score
         
         if is_outgoing:
-            # Good out points: low energy, falling trend, endings
-            if label in ['outro', 'breakdown']:
-                score += 0.3
-            if trend in ['falling', 'dip']:
+            # Prefer points where vocals are present (don't pick purely instrumental when vocals exist)
+            if vocal_presence > 0.35:
                 score += 0.2
-            if energy < 0.4:
-                score += 0.2
+            elif vocal_presence > 0.25:
+                score += 0.1
+            # In last stage: prefer gaps (brief dip between phrases, beat still playing) - natural mix point
+            if in_last_stage and at_gap and energy > 0.05:
+                score += 0.25  # Gap when beat playing = ideal
+            elif in_last_stage and label in ['outro', 'breakdown']:
+                score += 0.15  # Last stage, not at very end
+            if trend in ['falling', 'dip', 'stable']:
+                score += 0.1
             # Prefer later in song (but not very end)
-            position_score = (time_sec / duration) * 0.5
-            if 0.4 < position_score < 0.9:
-                score += position_score * 0.3
+            position_score = time_sec / duration
+            if 0.45 < position_score < 0.9:
+                score += position_score * 0.2
         else:
             # Good in points: rising energy, intros, build-ups, drops, choruses
             # Don't bias toward early positions - allow transitions into any section
@@ -490,10 +546,33 @@ class SmartTransitionFinder:
         # Sort by combined score (best first)
         evaluated_pairs.sort(key=lambda x: x['combined_score'], reverse=True)
         
-        # Return top 3 candidates for final selection
+        # When no candidates (e.g. no transition points found), return a safe default instead of recursing
         if not evaluated_pairs:
-            # Fallback to original method
-            return self.find_best_transition_pair(song_a_path, song_b_path, song_a_analysis, song_b_analysis)
+            print("  No transition candidates found; using default overlap points.")
+            duration_a = len(y_a) / sr_a
+            duration_b = len(y_b) / sr_b
+            # Default: transition out of A around 60%, into B around 10%
+            default_time_a = max(10.0, duration_a * 0.6)
+            default_time_b = min(duration_b - 5.0, max(5.0, duration_b * 0.1))
+            default_time_a = min(default_time_a, duration_a - 10.0)
+            default_point_a = TransitionPoint(
+                time_sec=default_time_a, beat_aligned=True, energy=0.5, energy_trend='stable',
+                structural_label='unknown', score=0.5, beat_position=0
+            )
+            default_point_b = TransitionPoint(
+                time_sec=default_time_b, beat_aligned=True, energy=0.5, energy_trend='stable',
+                structural_label='unknown', score=0.5, beat_position=0
+            )
+            return TransitionPair(
+                song_a_point=default_point_a,
+                song_b_point=default_point_b,
+                compatibility_score=0.5,
+                tempo_match=abs(tempo_a - tempo_b) < 5,
+                key_match=self._keys_compatible(key_a, key_b) if key_a and key_b else True,
+                beat_aligned=True,
+                quality_factors={'harmonic_compatibility': 0.7, 'energy_compatibility': 0.5, 'structural_compatibility': 0.5,
+                                 'tempo_phase_match': 0.5, 'spectral_clash_risk': 0.5, 'vocal_overlap_risk': 0.5, 'beat_alignment_quality': 1.0}
+            )
         
         # Use best candidate
         best = evaluated_pairs[0]

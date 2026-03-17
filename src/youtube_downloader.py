@@ -44,19 +44,22 @@ def download_youtube_audio(url: str, output_path: Path,
     # First download, then trim with ffmpeg for more reliable duration limiting
     temp_output = output_path.parent / f"temp_{output_path.name}"
     
-    # Use yt-dlp to download audio
+    # Use yt-dlp to download audio.
+    # Use android player_client to avoid SABR streaming issues on YouTube.
     cmd = [
         'yt-dlp',
         '-x',  # Extract audio
         '--audio-format', 'wav',
         '--audio-quality', '0',  # Best quality
         '--no-playlist',
+        '--extractor-args', 'youtube:player_client=android',
         '-o', str(temp_output).replace('.wav', '.%(ext)s'),
         url
     ]
     
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        # Add timeout to prevent hanging forever (120s for download)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=120)
         
         # yt-dlp outputs with pattern: temp_song_a.wav or temp_song_a.opus (then converts)
         # Find any file that matches our temp pattern
@@ -85,7 +88,8 @@ def download_youtube_audio(url: str, output_path: Path,
                         '-of', 'default=noprint_wrappers=1:nokey=1',
                         str(actual_file)
                     ]
-                    probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, check=True)
+                    # Timeout for probe
+                    probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, check=True, timeout=60)
                     total_duration = float(probe_result.stdout.strip())
                     
                     # Calculate start time (last N seconds)
@@ -111,7 +115,8 @@ def download_youtube_audio(url: str, output_path: Path,
                         str(output_path)
                     ]
                 
-                subprocess.run(trim_cmd, capture_output=True, check=True)
+                # Timeout for ffmpeg
+                subprocess.run(trim_cmd, capture_output=True, check=True, timeout=60)
                 actual_file.unlink()  # Delete temp file
             else:
                 # Convert/rename to .wav if needed (no duration limit)
@@ -121,7 +126,7 @@ def download_youtube_audio(url: str, output_path: Path,
                         '-acodec', 'pcm_s16le', '-ar', '44100',
                         str(output_path)
                     ]
-                    subprocess.run(convert_cmd, capture_output=True, check=True)
+                    subprocess.run(convert_cmd, capture_output=True, check=True, timeout=60)
                     actual_file.unlink()
                 elif actual_file != output_path:
                     shutil.move(str(actual_file), str(output_path))
@@ -134,6 +139,9 @@ def download_youtube_audio(url: str, output_path: Path,
         else:
             raise FileNotFoundError(f"Downloaded file not found: {output_path}")
             
+    except subprocess.TimeoutExpired as e:
+        print(f"  ✗ Download timed out: {e}")
+        raise
     except subprocess.CalledProcessError as e:
         print(f"  ✗ Error downloading: {e}")
         print(f"  stderr: {e.stderr[:200]}")

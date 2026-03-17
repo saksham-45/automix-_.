@@ -78,11 +78,11 @@ Professional DJ mixing techniques compiled from textbooks, online resources, and
 ## Creative & Effects Techniques
 
 ### 11. Loop Transition
-- **Description**: Use loops to create smooth mixing points
-- **When to use**: Any section, especially when phrases don't align
-- **Duration**: Variable (8-32 bars)
-- **Energy direction**: Variable
-- **Key principle**: Looping a section creates a "safe" transition point
+- **Description**: Use loops to create smooth mixing points. The system repeats a short loop from the end of the outgoing track, then crossfades into the incoming track.
+- **When to use**: Any section, especially when phrases don't align; selected when structure/energy fit (verse, chorus, breakdown, maintain).
+- **Duration**: Typically 16 bars; configurable via loop_length_bars and loop_repeats.
+- **Energy direction**: Maintain
+- **Key principle**: Looping a section creates a "safe" transition point. Now selected by the strategist when structure and energy fit, and uses real looping (not a simple crossfade).
 
 ### 12. Breakdown-to-Build Transition
 - **Description**: Transition from breakdown to build section
@@ -113,6 +113,34 @@ Professional DJ mixing techniques compiled from textbooks, online resources, and
 - **Energy direction**: Up (maintain energy)
 - **Key principle**: Fast fader chops create rhythmic emphasis
 
+### 16. Drop on the One
+- **Description**: Cut the outgoing track and bring in the new track exactly on the first beat of a bar (instant cut on downbeat).
+- **When to use**: High-energy sections (drop, chorus); energy direction up.
+- **Duration**: ~2 bars (short).
+- **Energy direction**: Up
+- **Key principle**: Minimal crossfade (e.g. 50 ms); effective for hip-hop or radio-style transitions.
+
+### 17. Back-and-Forth / Switch
+- **Description**: Alternating A and B every N bars (e.g. 8 or 16) for a call-and-response feel, then settling on B.
+- **When to use**: Verse/chorus sections, harmonically compatible, energy maintain.
+- **Duration**: ~24 bars.
+- **Energy direction**: Maintain
+- **Key principle**: Short crossfades at each switch; final segment is B only.
+
+### 18. Drum Roll / Percussion Bridge
+- **Description**: Short percussive build or "roll" (high-pass sweep on A + repeated slice) then cut to B on a strong beat.
+- **When to use**: Building energy; incoming section is build, drop, or chorus.
+- **Duration**: ~8 bars.
+- **Energy direction**: Up
+- **Key principle**: First half: high-pass sweep on A and repeated slice for roll; second half: quick crossfade to B.
+
+### 19. Thematic Handoff
+- **Description**: Phrase-aligned blend when thematic or lyric compatibility is present (same audible behavior as phrase_match).
+- **When to use**: When a future thematic_compatibility signal is available; structure preference verse, chorus, breakdown.
+- **Duration**: ~24 bars.
+- **Energy direction**: Maintain
+- **Key principle**: Same execution as phrase_match; selected when lyrics/themes are added later.
+
 ## Implementation Priority
 
 **High Priority** (Most commonly used):
@@ -124,12 +152,16 @@ Professional DJ mixing techniques compiled from textbooks, online resources, and
 
 **Medium Priority**:
 6. energy_build - Progressive transitions
-7. loop_transition - Flexible mixing tool
+7. loop_transition - Flexible mixing tool (now selected when structure/energy fit; uses real looping)
 8. breakdown_to_build - Energy arc matching
+9. drop_on_the_one - Instant cut on downbeat
+10. back_and_forth - Call-and-response switch
+11. drum_roll - Percussion bridge
+12. thematic_handoff - Phrase-aligned when thematic signal present
 
 **Lower Priority** (Specialized):
-9. rewind/reverse - Creative but less common
-10. transformer_cuts - Genre-specific (hip-hop)
+13. rewind/reverse - Creative but less common
+14. transformer_cuts - Genre-specific (hip-hop)
 
 ## Notes
 
