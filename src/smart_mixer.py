@@ -11,7 +11,7 @@ import time
 import os
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Union
-
+import scipy.signal as sig
 from src.smart_transition_finder import SmartTransitionFinder, TransitionPair
 from src.beat_aligner import BeatAligner
 from src.psychoacoustics import PsychoacousticAnalyzer
@@ -187,6 +187,60 @@ class SmartMixer:
         with open(log_path, 'a') as f:
             f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"ALL","location":"smart_mixer.py:51","message":"SmartMixer init complete","data":{"time_sec":init_time},"timestamp":int(time.time()*1000)}) + '\n')
         #endregion
+        
+    def _preprocess_file(self, y: np.ndarray) -> np.ndarray:
+        """
+        Per-file pre-processing to ensure starting hygiene:
+        1. Remove DC offset
+        2. Apply 30 Hz high-pass (4th order)
+        3. Short fade-in (~15ms) and fade-out (~20ms) to kill boundary clicks.
+        """
+        # Remove DC Offset
+        y = y - np.mean(y, axis=0) if y.ndim > 1 else y - np.mean(y)
+        
+        # 30Hz high-pass (4th order) to kill rumble
+        nyq = self.sr / 2
+        hp_cutoff = 30.0 / nyq
+        if hp_cutoff < 0.999:
+            try:
+                sos = sig.butter(4, hp_cutoff, btype='high', output='sos')
+                if y.ndim == 2:
+                    y_proc = np.zeros_like(y)
+                    for ch in range(y.shape[1]):
+                        y_proc[:, ch] = sig.sosfiltfilt(sos, y[:, ch])
+                    y = y_proc
+                else:
+                    y = sig.sosfiltfilt(sos, y)
+            except Exception:
+                pass
+                
+        # Fades
+        fade_in_samples = int(0.015 * self.sr)
+        fade_out_samples = int(0.020 * self.sr)
+        
+        if len(y) > fade_in_samples + fade_out_samples:
+            fade_in = np.linspace(0.0, 1.0, fade_in_samples)
+            fade_out = np.linspace(1.0, 0.0, fade_out_samples)
+            
+            if y.ndim == 2:
+                fade_in = fade_in[:, np.newaxis]
+                fade_out = fade_out[:, np.newaxis]
+                
+            y[:fade_in_samples] *= fade_in
+            y[-fade_out_samples:] *= fade_out
+            
+        return y.astype(np.float32)
+        
+    def _enforce_headroom(self, y: np.ndarray) -> np.ndarray:
+        """
+        Enforce headroom: normalize to -1 dBTP (0.89125) before any limiter.
+        Drops ceiling to prevent digital overs.
+        """
+        max_val = np.max(np.abs(y))
+        target = 0.89125 # -1 dB
+        if max_val > 1e-12:
+            y = y * (target / max_val)
+        return y
     
     def create_smooth_mix(self,
                          song_a_path: str,
@@ -219,6 +273,7 @@ class SmartMixer:
         
         #region agent log
         load_a_time = time.time() - start_time
+        y_a = self._preprocess_file(y_a)
         with open(log_path, 'a') as f:
             f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"smart_mixer.py:65","message":"Song A loaded","data":{"duration_sec":len(y_a)/self.sr,"load_time_sec":load_a_time},"timestamp":int(time.time()*1000)}) + '\n')
         #endregion
@@ -227,6 +282,7 @@ class SmartMixer:
         
         #region agent log
         load_b_time = time.time() - start_time - load_a_time
+        y_b = self._preprocess_file(y_b)
         with open(log_path, 'a') as f:
             f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"smart_mixer.py:69","message":"Song B loaded","data":{"duration_sec":len(y_b)/self.sr,"load_time_sec":load_b_time},"timestamp":int(time.time()*1000)}) + '\n')
         #endregion
@@ -1280,6 +1336,9 @@ class SmartMixer:
             y_a, _ = librosa.load(song_a_path, sr=self.sr)
             y_b, _ = librosa.load(song_b_path, sr=self.sr)
             
+            y_a = self._preprocess_file(y_a)
+            y_b = self._preprocess_file(y_b)
+            
             # Analyze songs
             print("[2/4] Analyzing songs...")
             analysis_a = self._analyze_song_fast(y_a, song_a_analysis)
@@ -1414,6 +1473,10 @@ class SmartMixer:
                 ], axis=0)
             else:
                 final = np.concatenate([ctx_a, mixed, ctx_b], axis=0)
+
+            # Final 20Hz/30Hz high-pass handled by _preprocess_file and per-stem filtering.
+            # Enforce headroom safely at -1 dBTP
+            final = self._enforce_headroom(final)
 
             # Metadata for where to resume Song B (relative to y_b)
             mix_metadata: Dict = {
