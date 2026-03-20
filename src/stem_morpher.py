@@ -331,10 +331,13 @@ class StemMorpher:
             for tech in techniques:
                 try:
                     if tech == 'spectral_envelope':
-                        current = self._apply_spectral_envelope_morph(
-                            current, target, depth
-                        )
-                        stem_report['techniques_applied'].append('spectral_envelope')
+                        if stem_name in ['vocals', 'other']:
+                            stem_report['techniques_applied'].append('bypassed_spectral_envelope_on_vocals')
+                        else:
+                            current = self._apply_spectral_envelope_morph(
+                                current, target, depth
+                            )
+                            stem_report['techniques_applied'].append('spectral_envelope')
 
                     elif tech == 'onset_replacement' and stem_name == 'drums':
                         current = self._apply_onset_replacement(
@@ -349,10 +352,13 @@ class StemMorpher:
                         stem_report['techniques_applied'].append('chroma_modulation')
 
                     elif tech == 'cross_synthesis':
-                        current = self._apply_cross_synthesis(
-                            current, target, depth
-                        )
-                        stem_report['techniques_applied'].append('cross_synthesis')
+                        if stem_name in ['vocals', 'other']:
+                            stem_report['techniques_applied'].append('bypassed_cross_synthesis_on_vocals')
+                        else:
+                            current = self._apply_cross_synthesis(
+                                current, target, depth
+                            )
+                            stem_report['techniques_applied'].append('cross_synthesis')
 
                     elif tech == 'multiband_crossfade':
                         current = self._apply_multiband_crossfade(

@@ -243,8 +243,9 @@ class SuperhumanDJEngine:
             # Set a placeholder technique for the rest of the pipeline
             selected_technique = {'name': conv_type, 'type': 'stem', 'techniques': [conv_type], 'weights': [1.0]}
             print(f"    ✓ Forcing stem orchestration: {conv_type}")
-        elif morph_depth > 0 and stems_a is not None and stems_b is not None:
-            # If morphing is requested and stems are available, use it as the primary technique
+        elif self.config.get('stem_morphing_enabled', True) and stems_a is not None and stems_b is not None and random.random() < 0.25:
+            # If morphing is enabled, allow the engine to naturally select it ~25% of the time,
+            # rather than letting a '> 0' depth config hijack 100% of transitions.
             orchestration = self.stem_orchestrator.create_stem_conversation(
                 stems_a, stems_b, 
                 conversation_type='progressive_morph',
@@ -254,7 +255,7 @@ class SuperhumanDJEngine:
             )
             analysis['orchestration'] = orchestration
             selected_technique = {'name': 'progressive_morph', 'type': 'stem', 'techniques': ['progressive_morph'], 'weights': [1.0]}
-            print(f"    ✓ Morphing requested, selecting technique: progressive_morph (depth={morph_depth})")
+            print(f"    ✓ AI naturally selected progressive morphing (depth={morph_depth})")
         elif self.config['enable_hybrid_techniques']:
             # Use context to suggest creative technique
             suggested_hybrid = self.technique_blender.suggest_creative_technique(
@@ -610,8 +611,8 @@ class SuperhumanDJEngine:
         use_technique_path = False
         if conversation is not None and stems_a is not None and stems_b is not None:
             if force_stem_orchestration is True or self.config.get('force_stem_orchestration', False):
-                use_technique_path = False  # Force One Kiss beat → Hell of a Life beat handoff
-                print("    ✓ Forcing stem orchestration (One Kiss beat → Hell of a Life handoff)")
+                use_technique_path = False
+                print(f"    ✓ Forcing stem orchestration ({conversation_type_override or conversation.get('type') or 'dynamic'})")
             else:
                 ratio = float(self.config.get('technique_execution_ratio', 0.62))
                 # Anti-repeat: if last transition used stem orchestration, bias heavily

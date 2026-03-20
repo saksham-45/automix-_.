@@ -323,28 +323,47 @@ class StemOrchestrator:
             curve_a = np.ones(n_samples)
             curve_b = np.zeros(n_samples)
             
-            # Find when this specific stem should transition
-            if stem in reveal_order:
-                idx = reveal_order.index(stem)
-                start_ratio = reveal_starts[idx]
+            if stem in ['vocals', 'other']:
+                # The user explicitly wants NO vocals/complex synths during the intense
+                # middle section of the morph to prevent "128kbps mp3" smearing artifacts.
+                # A fades out early (0.1 -> 0.3)
+                # B fades in late (0.7 -> 0.9)
+                start_a = int(n_samples * 0.1)
+                end_a = int(n_samples * 0.3)
+                if end_a > start_a:
+                    t_out = np.linspace(0, 1, end_a - start_a)
+                    curve_a[start_a:end_a] = 0.5 * (1 + np.cos(np.pi * t_out))
+                    curve_a[end_a:] = 0.0
+                
+                start_b = int(n_samples * 0.7)
+                end_b = int(n_samples * 0.9)
+                if end_b > start_b:
+                    t_in = np.linspace(0, 1, end_b - start_b)
+                    curve_b[start_b:end_b] = 0.5 * (1 - np.cos(np.pi * t_in))
+                    curve_b[end_b:] = 1.0
             else:
-                start_ratio = 0.5
+                # Find when this specific stem should transition
+                if stem in reveal_order:
+                    idx = reveal_order.index(stem)
+                    start_ratio = reveal_starts[idx]
+                else:
+                    start_ratio = 0.5
+                    
+                start_sample = int(n_samples * start_ratio)
+                fade_samples = int(n_samples * fade_duration_ratio)
+                end_sample = min(n_samples, start_sample + fade_samples)
                 
-            start_sample = int(n_samples * start_ratio)
-            fade_samples = int(n_samples * fade_duration_ratio)
-            end_sample = min(n_samples, start_sample + fade_samples)
-            
-            if end_sample > start_sample:
-                t = np.linspace(0, 1, end_sample - start_sample)
-                # S-curve crossfade
-                fade_out = 0.5 * (1 + np.cos(np.pi * t))
-                fade_in = 0.5 * (1 - np.cos(np.pi * t))
-                
-                curve_a[start_sample:end_sample] = fade_out
-                curve_a[end_sample:] = 0.0
-                
-                curve_b[start_sample:end_sample] = fade_in
-                curve_b[end_sample:] = 1.0
+                if end_sample > start_sample:
+                    t = np.linspace(0, 1, end_sample - start_sample)
+                    # S-curve crossfade
+                    fade_out = 0.5 * (1 + np.cos(np.pi * t))
+                    fade_in = 0.5 * (1 - np.cos(np.pi * t))
+                    
+                    curve_a[start_sample:end_sample] = fade_out
+                    curve_a[end_sample:] = 0.0
+                    
+                    curve_b[start_sample:end_sample] = fade_in
+                    curve_b[end_sample:] = 1.0
             
             # Smooth out curves
             curve_a = gaussian_filter1d(curve_a, sigma=500)

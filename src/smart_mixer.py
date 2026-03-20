@@ -164,15 +164,15 @@ class SmartMixer:
                         bpm_matching_always=super_cfg.get('bpm_matching_always', True),
                         bpm_matching_min_diff=float(super_cfg.get('bpm_matching_min_diff', 1.0)),
                         technique_execution_ratio=float(super_cfg.get('technique_execution_ratio', 0.62)),
-                        avoid_consecutive_stem_orchestration=bool(super_cfg.get('avoid_consecutive_stem_orchestration', True)),
-                        technique_diversity_lookback=int(super_cfg.get('technique_diversity_lookback', 4)),
-                        technique_diversity_attempts=int(super_cfg.get('technique_diversity_attempts', 4)),
+                        avoid_consecutive_stem_orchestration=bool(super_cfg.get('avoid_consecutive_stem_orchestration', False)),
+                        technique_diversity_lookback=int(super_cfg.get('technique_diversity_lookback', 2)),
+                        technique_diversity_attempts=int(super_cfg.get('technique_diversity_attempts', 2)),
                         key_modulation_enabled=super_cfg.get('key_modulation_enabled', True),
-                        key_modulation_max_semitones=int(super_cfg.get('key_modulation_max_semitones', 2)),
+                        key_modulation_max_semitones=int(super_cfg.get('key_modulation_max_semitones', 4)),
                         key_modulation_only_when_incompatible=super_cfg.get('key_modulation_only_when_incompatible', True),
                         # Stem morphing config
                         stem_morphing_enabled=super_cfg.get('stem_morphing_enabled', True),
-                        stem_morph_depth=float(super_cfg.get('stem_morph_depth', 0.8)),
+                        stem_morph_depth=float(super_cfg.get('stem_morph_depth', 0.56)),
                         stem_morph_strategy=super_cfg.get('stem_morph_strategy', 'best_match'),
                         stem_morph_techniques=super_cfg.get('stem_morph_techniques', None),
                     )
@@ -1412,7 +1412,8 @@ class SmartMixer:
             print(f"  Recommendation: {quality.get('recommendation', 'unknown')}")
             
             if analysis.get('mix_method') == 'stem_orchestration':
-                print(f"  Method: Stem orchestration (One Kiss beat → Hell of a Life handoff)")
+                conv_type = analysis.get('stem_orchestration', {}).get('conversation_type') or analysis.get('orchestration', {}).get('type', 'dynamic_orchestration')
+                print(f"  Method: Stem orchestration ({conv_type})")
             elif 'technique' in analysis:
                 tech = analysis['technique']
                 if tech.get('type') == 'hybrid':

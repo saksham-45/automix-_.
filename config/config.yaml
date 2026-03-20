@@ -133,7 +133,7 @@ superhuman:
   # Instead of just fading volumes, the actual audio transforms note-by-note,
   # hit-by-hit, timbre-by-timbre into the next song's stems.
   stem_morphing_enabled: true
-  stem_morph_depth: 0.8              # 0.0 = off, 1.0 = full content transformation
+  stem_morph_depth: 0.56              # 0.0 = off, 1.0 = full content transformation
   stem_morph_strategy: "best_match"  # "best_match" | "drums_first" | "all" | specific stem name
   # Techniques list (null = auto-select per stem type):
   #   spectral_envelope  - timbre morphing (Phase 1)

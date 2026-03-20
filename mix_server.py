@@ -68,12 +68,20 @@ def get_session_status(sid):
         
     return jsonify({
         "status": session.status,
-        "chunks": chunks_data
+        "chunks": chunks_data,
+        "continuous_url": f"/api/session/{sid}/continuous" if getattr(session, "continuous_ready", False) else None
     })
 
 @app.route("/api/audio/<filename>")
 def serve_audio(filename):
     return send_from_directory(CACHE_DIR, filename)
+
+@app.route("/api/session/<sid>/continuous")
+def serve_continuous(sid):
+    session = manager.get_session(sid)
+    if not session or not getattr(session, "continuous_ready", False):
+        return jsonify({"error": "Continuous stream not ready"}), 404
+    return send_from_directory(CACHE_DIR, Path(session.continuous_path).name, mimetype="audio/wav")
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5005, debug=False, threaded=True, use_reloader=False)
