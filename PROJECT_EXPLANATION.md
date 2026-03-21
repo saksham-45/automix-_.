@@ -178,7 +178,7 @@ predictions = model.predict(features, key_a, key_b, duration_sec=16.0)
 mixer = SmartMixer()
 mixed_audio = mixer.create_smooth_mix(
     song_a_path, song_b_path,
-    transition_duration=16.0,
+    transition_duration=30.0,
     ai_transition_data=predictions
 )
 # Applies: beat matching, EQ automation, volume curves, etc.

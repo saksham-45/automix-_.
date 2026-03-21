@@ -180,8 +180,8 @@ def main():
                        help='Which stems to morph (default: from config, usually best_match)')
     parser.add_argument('--no-morph', action='store_true',
                        help='Disable stem morphing entirely')
-    parser.add_argument('--transition', type=float, default=84.0,
-                       help='Transition duration in seconds (default: 84). Longer = smoother morph.')
+    parser.add_argument('--transition', type=float, default=30.0,
+                       help='Transition duration in seconds (default: 30). Longer = smoother morph.')
     parser.add_argument('--keep', action='store_true',
                        help='Keep downloaded audio files (default: delete after mixing)')
     
@@ -290,4 +290,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

@@ -14,6 +14,7 @@ import numpy as np
 from typing import Dict, List, Tuple, Optional, Callable
 from concurrent.futures import ThreadPoolExecutor
 import random
+import numba
 
 
 class MonteCarloQualityOptimizer:
@@ -72,6 +73,11 @@ class MonteCarloQualityOptimizer:
         Returns:
             Best parameters and simulation results
         """
+        # Context-aware simulation count: reduce for slow techniques
+        is_slow = any(t in technique for t in ['morph', 'hybrid', 'superhuman'])
+        if is_slow:
+            n_simulations = min(n_simulations, 8)  # Heavy techniques only get 8 test runs
+            
         if executor_fn is None:
             # Create default executor if not provided
             from src.technique_executor import TechniqueExecutor
@@ -186,7 +192,7 @@ class MonteCarloQualityOptimizer:
         clarity = self._calculate_clarity(output)
         
         # Energy flow: RMS stability
-        energy_flow = self._calculate_energy_flow(output)
+        energy_flow = self._calculate_energy_flow(output, seg_a, seg_b)
         
         # Harmonic quality: simplified harmonic analysis
         harmonic_quality = self._calculate_harmonic_quality(output, seg_a, seg_b)
@@ -217,6 +223,19 @@ class MonteCarloQualityOptimizer:
             'surprise': float(surprise)
         }
     
+    @staticmethod
+    @numba.jit(nopython=True, cache=True)
+    def _calculate_flux_loop(spectra_data):
+        n_frames = spectra_data.shape[0]
+        n_bins = spectra_data.shape[1]
+        flux = 0.0
+        for i in range(1, n_frames):
+            for j in range(n_bins):
+                diff = spectra_data[i, j] - spectra_data[i-1, j]
+                if diff > 0:
+                    flux += diff * diff
+        return flux / n_frames
+
     def _calculate_spectral_flux(self, y: np.ndarray) -> float:
         """Fast spectral flux calculation."""
         if y.ndim > 1:
@@ -227,22 +246,17 @@ class MonteCarloQualityOptimizer:
         if n_frames < 2:
             return 0.0
         
-        frame_size = len(y) // n_frames
-        spectra = []
+        frame_size = 1024
+        spectra = np.zeros((n_frames, frame_size // 2))
         
         for i in range(n_frames):
             start = i * frame_size
             end = start + frame_size
+            if end > len(y): break
             spec = np.abs(np.fft.fft(y[start:end])[:frame_size//2])
-            spectra.append(spec)
+            spectra[i] = spec
         
-        # Calculate flux
-        flux = 0.0
-        for i in range(1, len(spectra)):
-            diff = spectra[i] - spectra[i-1]
-            flux += np.sum(np.maximum(0, diff) ** 2)
-        
-        return flux / n_frames
+        return self._calculate_flux_loop(spectra)
     
     def _calculate_clarity(self, y: np.ndarray) -> float:
         """Fast clarity estimation."""
@@ -261,10 +275,11 @@ class MonteCarloQualityOptimizer:
         
         return clarity
     
-    def _calculate_energy_flow(self, y: np.ndarray) -> float:
-        """Calculate energy flow stability."""
-        if y.ndim > 1:
-            y = np.mean(y, axis=1)
+    def _calculate_energy_flow(self, y: np.ndarray, seg_a: np.ndarray, seg_b: np.ndarray) -> float:
+        """Calculate contextual energy flow taking into account drop impacts."""
+        if y.ndim > 1: y = np.mean(y, axis=1)
+        if seg_a.ndim > 1: seg_a = np.mean(seg_a, axis=1)
+        if seg_b.ndim > 1: seg_b = np.mean(seg_b, axis=1)
         
         # RMS in windows
         window_size = int(0.5 * self.sr)
@@ -272,54 +287,69 @@ class MonteCarloQualityOptimizer:
         
         if n_windows < 3:
             return 0.7
-        
+            
         rms_values = []
         for i in range(n_windows):
             start = i * window_size
-            end = start + window_size
-            rms = np.sqrt(np.mean(y[start:end] ** 2))
-            rms_values.append(rms)
-        
+            rms_values.append(np.sqrt(np.mean(y[start:start+window_size] ** 2)))
+            
         rms_values = np.array(rms_values)
+        mean_rms = np.mean(rms_values)
         
-        # Lower variation = better flow
-        if np.mean(rms_values) > 0:
-            cv = np.std(rms_values) / np.mean(rms_values)
-            flow = 1.0 - min(1.0, cv)
-        else:
-            flow = 0.5
+        if mean_rms == 0:
+            return 0.5
+            
+        cv = np.std(rms_values) / mean_rms
         
-        return flow
+        # Contextual Energy Analysis: Did Track B come in significantly hotter?
+        # If so, a big energy spike is expected and should be rewarded as High Impact.
+        rms_a = np.sqrt(np.mean(seg_a[-window_size:] ** 2)) if len(seg_a) > window_size else np.sqrt(np.mean(seg_a ** 2))
+        rms_b = np.sqrt(np.mean(seg_b[:window_size] ** 2)) if len(seg_b) > window_size else np.sqrt(np.mean(seg_b ** 2))
+        
+        transition_trend = rms_values[-1] - rms_values[0]
+        context_trend = rms_b - rms_a
+        
+        # If we expected an impact shift (e.g. drop) -> reward the massive shift
+        if abs(context_trend) > mean_rms * 0.15:
+            if np.sign(transition_trend) == np.sign(context_trend) and abs(transition_trend) > mean_rms * 0.05:
+                return min(1.0, 0.7 + abs(transition_trend/mean_rms)*0.5)
+            else:
+                return 0.4  # Penalize for failing to build the intended energy
+        
+        # Otherwise default to smooth flow penalty
+        return 1.0 - min(1.0, cv)
     
     def _calculate_harmonic_quality(self,
                                     y: np.ndarray,
                                     seg_a: np.ndarray,
                                     seg_b: np.ndarray) -> float:
-        """Fast harmonic quality estimation."""
-        if y.ndim > 1:
-            y = np.mean(y, axis=1)
+        """Contextual harmonic scoring: Reward tension that successfully resolves."""
+        if y.ndim > 1: y = np.mean(y, axis=1)
         
-        # Check for dissonance in middle section
-        mid_start = len(y) // 3
-        mid_end = 2 * len(y) // 3
-        mid_section = y[mid_start:mid_end]
+        def get_flatness(section):
+            spec = np.abs(np.fft.fft(section)[:len(section)//2])
+            if len(spec) == 0 or np.mean(spec) == 0: return 0.5
+            geometric_mean = np.exp(np.mean(np.log(spec + 1e-10)))
+            arithmetic_mean = np.mean(spec)
+            return geometric_mean / arithmetic_mean
+            
+        # Check dissonance in the middle (Tension) vs the end (Release)
+        n_samples = len(y)
+        mid_section = y[n_samples // 3 : 2 * n_samples // 3]
+        end_section = y[int(n_samples * 0.8):]
         
-        # Spectral flatness as proxy for harmonic content
-        spec = np.abs(np.fft.fft(mid_section)[:len(mid_section)//2])
+        mid_harmony = 1.0 - get_flatness(mid_section)
+        end_harmony = 1.0 - get_flatness(end_section)
         
-        if len(spec) == 0 or np.mean(spec) == 0:
-            return 0.5
+        # Contextual trajectory: 
+        # Extreme dissonance in the middle is actually rewarded as "Tension Building",
+        # as long as the math shows it resolves to pure consonance (high end_harmony).
+        tension = max(0.0, end_harmony - mid_harmony)
         
-        geometric_mean = np.exp(np.mean(np.log(spec + 1e-10)))
-        arithmetic_mean = np.mean(spec)
+        # Base score on final resolution quality, plus a bonus for successfully resolving built-up tension
+        score = end_harmony + (tension * 0.4)
         
-        flatness = geometric_mean / arithmetic_mean
-        
-        # Higher flatness = more noise-like = worse harmony
-        # Lower flatness = more tonal = better harmony
-        harmonic = 1.0 - flatness
-        
-        return max(0.0, min(1.0, harmonic))
+        return max(0.0, min(1.0, score))
     
     def _calculate_creativity(self, params: Dict) -> float:
         """Calculate creativity score based on parameter choices."""

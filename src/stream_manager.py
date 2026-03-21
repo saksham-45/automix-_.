@@ -12,15 +12,28 @@ from concurrent.futures import ThreadPoolExecutor
 from src.smart_mixer import SmartMixer
 from src.youtube_downloader import download_youtube_audio
 from scripts.mix_playlist import fetch_playlist_video_ids
+from src.settings import TRANSITION_LENGTH, TRANSITION_WINDOW, CACHE_DIR, SR  # type: ignore
 
-# Constants
-TRANSITION_WINDOW = 124.0  # Seconds of audio to grab from ends for mixing (standard matching create_mix_from_youtube)
-TRANSITION_LENGTH = 84.0  # Target overlap duration (84s as per user requirement)
-SR = 44100
-CACHE_DIR = Path("data/cache/stream")
+# Ensure cache directory exists early
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 # Keep strict playlist order for streaming stability.
 ENABLE_SMART_QUEUE = False
+
+def _to_stereo_frames(y: np.ndarray) -> np.ndarray:
+    """Return float32 shape (frames, 2) for any input mono/stereo array."""
+    if y.ndim == 1:
+        y = np.stack([y, y], axis=1)
+    elif y.ndim == 2:
+        # Librosa mono=False returns (channels, frames); convert to (frames, channels)
+        if y.shape[0] <= 4 and y.shape[1] > y.shape[0]:
+            y = y.T
+        # If single-channel, duplicate
+        if y.shape[1] == 1:
+            y = np.repeat(y, 2, axis=1)
+        # If more than 2 channels, take first two
+        if y.shape[1] > 2:
+            y = y[:, :2]
+    return y.astype(np.float32)
 
 class StreamSession:
     def __init__(self, playlist_url: str):
@@ -46,6 +59,23 @@ class StreamSession:
         self.morph_strategy = 'all'
         self.enable_morphing = True
 
+        # Continuous stream writer (single PCM file to eliminate per-chunk fetch gaps)
+        self.continuous_path = CACHE_DIR / f"{self.id}_continuous.wav"
+        self._writer = None
+        self._written_samples = 0
+        self.continuous_ready = False
+
+    def _ensure_writer(self, channels: int):
+        """Open a streaming WAV writer once so chunks are appended gaplessly."""
+        if self._writer is None:
+            self._writer = sf.SoundFile(
+                self.continuous_path,
+                mode="w",
+                samplerate=SR,
+                channels=channels,
+                subtype="PCM_16",
+            )
+
     def _build_fallback_transition(self, snippet_a: np.ndarray, snippet_b: np.ndarray):
         """
         Fast fallback transition when AI transition generation fails.
@@ -69,6 +99,7 @@ class StreamSession:
 
         # Song B should resume after the consumed overlap head.
         b_resume_offset = overlap_samples
+        mixed = _to_stereo_frames(mixed)
         return mixed.astype(np.float32), a_transition_start, b_resume_offset
         
     def _worker_loop(self):
@@ -123,8 +154,11 @@ class StreamSession:
                 self.status = "error"
                 return
                 
-            current_y, _ = librosa.load(current_path, sr=SR)
+            current_y, _ = librosa.load(current_path, sr=SR, mono=False)
+            current_y = _to_stereo_frames(current_y)
             current_dur = len(current_y) / SR
+            # Prepare continuous writer once we know channel count (force stereo)
+            self._ensure_writer(channels=2)
             # Start playing first song from the very beginning.
             # For subsequent songs, this start index will be updated based on
             # how much of the head was consumed by the previous transition.
@@ -171,20 +205,21 @@ class StreamSession:
                     continue
                     
                 print(f"DEBUG: Loading audio for {next_item['title']}...", flush=True)
-                next_y, _ = librosa.load(next_path, sr=SR)
+                next_y, _ = librosa.load(next_path, sr=SR, mono=False)
+                next_y = _to_stereo_frames(next_y)
                 if len(next_y) == 0:
                     print(f"DEBUG: Empty audio loaded for {next_item['title']}, skipping", flush=True)
                     continue
                 
                 # --- FIX: LCD (Loudness Consistency enforcement) ---
-                # Normalize entire track to -14 LUFS to match transition processing
+                # Normalize entire track to target LUFS to match transition processing
                 # This prevents the "blink of eye" volume jump between Body and Transition
                 try:
                     from src.psychoacoustics import PsychoacousticAnalyzer
                     analyzer = PsychoacousticAnalyzer(sr=SR)
                     analysis = analyzer.analyze_loudness_lufs(next_y)
                     lufs = analysis.get('integrated_lufs', -23.0)
-                    target_lufs = -14.0
+                    target_lufs = float(__import__('src.settings', fromlist=['LUFS_TARGET']).LUFS_TARGET)
                     gain_db = target_lufs - lufs
                     if ENABLE_SMART_QUEUE and smart_q is not None:
                         next_meta = smart_q.get_preview_metadata(next_item['url'], next_item['id'])
@@ -234,6 +269,7 @@ class StreamSession:
                         morph_depth=self.morph_depth if self.enable_morphing else 0.0,
                         morph_strategy=self.morph_strategy
                     )
+                    mixed = _to_stereo_frames(mixed)
                     print("DEBUG: create_superhuman_mix returned", flush=True)
 
                     # Where transition starts in Song A snippet
@@ -242,6 +278,10 @@ class StreamSession:
                     except Exception:
                         a_transition_start_in_snippet = 0
                     a_transition_start_in_snippet = max(0, min(len(snippet_a), a_transition_start_in_snippet))
+                    # Guard: never drop more than the intended transition length from Song A.
+                    min_transition_start = max(0, len(snippet_a) - int(TRANSITION_LENGTH * SR))
+                    if a_transition_start_in_snippet < min_transition_start:
+                        a_transition_start_in_snippet = min_transition_start
 
                     # Where should Song B resume after the transition?
                     try:
@@ -272,6 +312,9 @@ class StreamSession:
                     main_body_audio = current_y[body_start_idx:body_end_idx]
                     chunk_path = CACHE_DIR / f"{self.id}_song_{i-1}_body.wav"
                     sf.write(chunk_path, main_body_audio, SR)
+                    if self._writer is not None:
+                        self._writer.write(main_body_audio)
+                        self._written_samples += len(main_body_audio)
                     self.chunks_queue.put({
                         "id": f"{self.id}_{i-1}_body",
                         "type": "main",
@@ -287,6 +330,9 @@ class StreamSession:
                 if mixed is not None:
                     trans_path = CACHE_DIR / f"{self.id}_trans_{i-1}_{i}.wav"
                     sf.write(trans_path, mixed, SR)
+                    if self._writer is not None:
+                        self._writer.write(mixed)
+                        self._written_samples += len(mixed)
                     self.chunks_queue.put({
                         "id": f"{self.id}_trans_{i-1}_{i}",
                         "type": "transition",
@@ -314,6 +360,9 @@ class StreamSession:
                 remain = current_y[start_idx:]
                 p = CACHE_DIR / f"{self.id}_final.wav"
                 sf.write(p, remain, SR)
+                if self._writer is not None:
+                    self._writer.write(remain)
+                    self._written_samples += len(remain)
                 self.chunks_queue.put({
                     "id": f"{self.id}_final",
                     "type": "main",
@@ -321,7 +370,10 @@ class StreamSession:
                     "duration": len(remain)/SR,
                     "title": current_item['title'] + " (Outro)"
                 })
-                
+            if self._writer is not None:
+                self._writer.flush()
+                self._writer.close()
+                self.continuous_ready = True
             self.chunks_queue.put(None) # Sentinel for "Done"
             self.status = "finished"
             
@@ -330,6 +382,12 @@ class StreamSession:
             import traceback
             traceback.print_exc()
             self.status = "error"
+        finally:
+            if self._writer is not None:
+                try:
+                    self._writer.close()
+                except Exception:
+                    pass
             
     def _download_track(self, item) -> Optional[str]:
         vid = item['id']

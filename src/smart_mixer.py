@@ -11,7 +11,8 @@ import time
 import os
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Union
-
+import scipy.signal as sig
+from src.settings import ENABLE_AGENTIC_DURATION
 from src.smart_transition_finder import SmartTransitionFinder, TransitionPair
 from src.beat_aligner import BeatAligner
 from src.psychoacoustics import PsychoacousticAnalyzer
@@ -164,15 +165,15 @@ class SmartMixer:
                         bpm_matching_always=super_cfg.get('bpm_matching_always', True),
                         bpm_matching_min_diff=float(super_cfg.get('bpm_matching_min_diff', 1.0)),
                         technique_execution_ratio=float(super_cfg.get('technique_execution_ratio', 0.62)),
-                        avoid_consecutive_stem_orchestration=bool(super_cfg.get('avoid_consecutive_stem_orchestration', True)),
-                        technique_diversity_lookback=int(super_cfg.get('technique_diversity_lookback', 4)),
-                        technique_diversity_attempts=int(super_cfg.get('technique_diversity_attempts', 4)),
+                        avoid_consecutive_stem_orchestration=bool(super_cfg.get('avoid_consecutive_stem_orchestration', False)),
+                        technique_diversity_lookback=int(super_cfg.get('technique_diversity_lookback', 2)),
+                        technique_diversity_attempts=int(super_cfg.get('technique_diversity_attempts', 2)),
                         key_modulation_enabled=super_cfg.get('key_modulation_enabled', True),
-                        key_modulation_max_semitones=int(super_cfg.get('key_modulation_max_semitones', 2)),
+                        key_modulation_max_semitones=int(super_cfg.get('key_modulation_max_semitones', 4)),
                         key_modulation_only_when_incompatible=super_cfg.get('key_modulation_only_when_incompatible', True),
                         # Stem morphing config
                         stem_morphing_enabled=super_cfg.get('stem_morphing_enabled', True),
-                        stem_morph_depth=float(super_cfg.get('stem_morph_depth', 0.8)),
+                        stem_morph_depth=float(super_cfg.get('stem_morph_depth', 0.56)),
                         stem_morph_strategy=super_cfg.get('stem_morph_strategy', 'best_match'),
                         stem_morph_techniques=super_cfg.get('stem_morph_techniques', None),
                     )
@@ -187,6 +188,60 @@ class SmartMixer:
         with open(log_path, 'a') as f:
             f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"ALL","location":"smart_mixer.py:51","message":"SmartMixer init complete","data":{"time_sec":init_time},"timestamp":int(time.time()*1000)}) + '\n')
         #endregion
+        
+    def _preprocess_file(self, y: np.ndarray) -> np.ndarray:
+        """
+        Per-file pre-processing to ensure starting hygiene:
+        1. Remove DC offset
+        2. Apply 30 Hz high-pass (4th order)
+        3. Short fade-in (~15ms) and fade-out (~20ms) to kill boundary clicks.
+        """
+        # Remove DC Offset
+        y = y - np.mean(y, axis=0) if y.ndim > 1 else y - np.mean(y)
+        
+        # 30Hz high-pass (4th order) to kill rumble
+        nyq = self.sr / 2
+        hp_cutoff = 30.0 / nyq
+        if hp_cutoff < 0.999:
+            try:
+                sos = sig.butter(4, hp_cutoff, btype='high', output='sos')
+                if y.ndim == 2:
+                    y_proc = np.zeros_like(y)
+                    for ch in range(y.shape[1]):
+                        y_proc[:, ch] = sig.sosfiltfilt(sos, y[:, ch])
+                    y = y_proc
+                else:
+                    y = sig.sosfiltfilt(sos, y)
+            except Exception:
+                pass
+                
+        # Fades
+        fade_in_samples = int(0.015 * self.sr)
+        fade_out_samples = int(0.020 * self.sr)
+        
+        if len(y) > fade_in_samples + fade_out_samples:
+            fade_in = np.linspace(0.0, 1.0, fade_in_samples)
+            fade_out = np.linspace(1.0, 0.0, fade_out_samples)
+            
+            if y.ndim == 2:
+                fade_in = fade_in[:, np.newaxis]
+                fade_out = fade_out[:, np.newaxis]
+                
+            y[:fade_in_samples] *= fade_in
+            y[-fade_out_samples:] *= fade_out
+            
+        return y.astype(np.float32)
+        
+    def _enforce_headroom(self, y: np.ndarray) -> np.ndarray:
+        """
+        Enforce headroom: normalize to -1 dBTP (0.89125) before any limiter.
+        Drops ceiling to prevent digital overs.
+        """
+        max_val = np.max(np.abs(y))
+        target = 0.89125 # -1 dB
+        if max_val > 1e-12:
+            y = y * (target / max_val)
+        return y
     
     def create_smooth_mix(self,
                          song_a_path: str,
@@ -219,6 +274,7 @@ class SmartMixer:
         
         #region agent log
         load_a_time = time.time() - start_time
+        y_a = self._preprocess_file(y_a)
         with open(log_path, 'a') as f:
             f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"smart_mixer.py:65","message":"Song A loaded","data":{"duration_sec":len(y_a)/self.sr,"load_time_sec":load_a_time},"timestamp":int(time.time()*1000)}) + '\n')
         #endregion
@@ -227,6 +283,7 @@ class SmartMixer:
         
         #region agent log
         load_b_time = time.time() - start_time - load_a_time
+        y_b = self._preprocess_file(y_b)
         with open(log_path, 'a') as f:
             f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"smart_mixer.py:69","message":"Song B loaded","data":{"duration_sec":len(y_b)/self.sr,"load_time_sec":load_b_time},"timestamp":int(time.time()*1000)}) + '\n')
         #endregion
@@ -338,18 +395,25 @@ class SmartMixer:
             clash_score
         )
         
-        # Get technique-specific parameters
-        technique_params = self.transition_strategist.get_technique_parameters(
+        # 🧠 AGENTIC TRANSITION DURATION
+        # Instead of following a rigid user command or fallback, the AI calculates the exact
+        # perfect duration for the transition between 5 and 90 seconds.
+        transition_duration = self._calculate_agentic_duration(
             technique['technique_name'],
-            {'duration_sec': transition_duration or technique['duration_sec']}
+            clash_score,
+            analysis_a['tempo'],
+            analysis_b['tempo'],
+            suggested_duration=transition_duration
         )
         
-        # Determine transition duration
-        if transition_duration is None:
-            transition_duration = technique['duration_sec']
+        # Get technique-specific parameters using our new dynamic duration
+        technique_params = self.transition_strategist.get_technique_parameters(
+            technique['technique_name'],
+            {'duration_sec': transition_duration}
+        )
         
         print(f"  Technique: {technique['technique_name']}")
-        print(f"  Duration: {transition_duration:.1f}s ({technique['duration_bars']} bars)")
+        print(f"  🧠 Agentic Duration: {transition_duration:.1f}s (Clash: {clash_score:.2f}, ΔTempo: {abs(analysis_a['tempo']-analysis_b['tempo']):.1f} BPM)")
         
         # Extract segments
         print("[6/8] Extracting and processing segments...")
@@ -1277,8 +1341,15 @@ class SmartMixer:
             
             # Load audio
             print("\n[1/4] Loading audio...")
-            y_a, _ = librosa.load(song_a_path, sr=self.sr)
-            y_b, _ = librosa.load(song_b_path, sr=self.sr)
+            # Optimize RAM: only load sections we need (end of A, start of B)
+            # If the user passed a full path, this saves hundreds of megabytes.
+            # We assume YouTube transitions use ~124s clips.
+            y_a_dur = librosa.get_duration(path=song_a_path)
+            y_a, _ = librosa.load(song_a_path, sr=self.sr, offset=max(0, y_a_dur - 130))
+            y_b, _ = librosa.load(song_b_path, sr=self.sr, duration=130)
+            
+            y_a = self._preprocess_file(y_a)
+            y_b = self._preprocess_file(y_b)
             
             # Analyze songs
             print("[2/4] Analyzing songs...")
@@ -1297,11 +1368,20 @@ class SmartMixer:
             point_a = transition_pair.song_a_point.time_sec
             point_b = transition_pair.song_b_point.time_sec
             
-            # Determine transition duration
-            if transition_duration is None:
-                # Optimized for 84s transitions as per user standard
-                bars = 32 if tempo_a > 130 else 42
-                transition_duration = (bars * 4 * 60) / tempo_a
+            # Compute clash score early to inform duration
+            clash_sample_len = min(5 * self.sr, len(y_a), len(y_b))
+            clash_analysis = self.psychoacoustics.predict_frequency_clash(y_a[:clash_sample_len], y_b[:clash_sample_len])
+            clash_score = clash_analysis.get('clash_score', 0.5)
+
+            # Determine transition duration Agentically
+            # We don't know the exact technique name yet, so we assume 'superhuman' baseline
+            transition_duration = self._calculate_agentic_duration(
+                'superhuman', 
+                clash_score, 
+                tempo_a, 
+                tempo_b, 
+                suggested_duration=transition_duration
+            )
             
             # Ensure we have enough audio for the transition (avoid zero-padding silence)
             max_point_b = max(0.0, (len(y_b) / self.sr) - transition_duration - 0.5)
@@ -1353,7 +1433,8 @@ class SmartMixer:
             print(f"  Recommendation: {quality.get('recommendation', 'unknown')}")
             
             if analysis.get('mix_method') == 'stem_orchestration':
-                print(f"  Method: Stem orchestration (One Kiss beat → Hell of a Life handoff)")
+                conv_type = analysis.get('stem_orchestration', {}).get('conversation_type') or analysis.get('orchestration', {}).get('type', 'dynamic_orchestration')
+                print(f"  Method: Stem orchestration ({conv_type})")
             elif 'technique' in analysis:
                 tech = analysis['technique']
                 if tech.get('type') == 'hybrid':
@@ -1415,6 +1496,10 @@ class SmartMixer:
             else:
                 final = np.concatenate([ctx_a, mixed, ctx_b], axis=0)
 
+            # Final 20Hz/30Hz high-pass handled by _preprocess_file and per-stem filtering.
+            # Enforce headroom safely at -1 dBTP
+            final = self._enforce_headroom(final)
+
             # Metadata for where to resume Song B (relative to y_b)
             mix_metadata: Dict = {
                 # Start of transition content in Song A snippet coordinates.
@@ -1453,3 +1538,67 @@ class SmartMixer:
                 ai_transition_data=ai_data,
                 return_metadata=return_metadata,
             )        
+
+    def _calculate_agentic_duration(self, 
+                                    tech_name: str, 
+                                    clash_score: float, 
+                                    tempo_a: float, 
+                                    tempo_b: float,
+                                    suggested_duration: Optional[float] = None) -> float:
+        """
+        Calculates the perfect transition duration based on context.
+        Overrides user defaults if the audio clash is too extreme.
+        """
+        # Honor caller preference when agentic duration is disabled
+        if not ENABLE_AGENTIC_DURATION and suggested_duration is not None:
+            base = float(suggested_duration)
+            return float(max(8.0, min(45.0, base)))
+
+        # 1. Base ideal duration set by the technique style
+        if 'morph' in tech_name or 'superhuman' in tech_name:
+            ideal_dur = 64.0  # Morphing / Superhuman layers need time
+        elif any(t in tech_name for t in ['cut', 'drop', 'echo', 'backspin']):
+            ideal_dur = 8.0   # Fast techniques must be quick
+        elif 'staggered' in tech_name or 'operator' in tech_name:
+            ideal_dur = 48.0  # Detailed layering
+        else:
+            ideal_dur = 32.0  # Standard
+            
+        # 2. Contextual Audio Adjustments
+        tempo_diff = abs(tempo_a - tempo_b)
+        
+        # A) Severe harmonic clash: Get out fast!
+        # Threshold lowered: human DJs don't blend long on high clash.
+        if clash_score > 0.55:
+            clash_penalty = (clash_score - 0.5) * 80 
+            ideal_dur -= clash_penalty
+            
+        # B) Massive tempo gaps warp audio: Shrink the window
+        # Threshold lowered: > 6 BPM is a huge gap to blend for 1+ minute.
+        t_gap = tempo_diff
+        if t_gap > 30: # Likely double/half time
+            candidates = [abs(tempo_a - (tempo_b * 0.5)), abs(tempo_a - tempo_b), abs(tempo_a - (tempo_b * 2.0))]
+            t_gap = min(candidates)
+            
+        if t_gap > 5.0:
+            tempo_penalty = t_gap * 5
+            ideal_dur -= tempo_penalty
+            
+        # 3. Intelligence: If suggested duration exists but clash is high, override it!
+        # This handles the 'create_mix_from_youtube --transition 84' default case
+        if suggested_duration is not None:
+             base = float(suggested_duration)
+             min_dur = max(8.0, 0.6 * base)     # never drop below 60% of the request (or 8s)
+             max_dur = min(45.0, max(24.0, 1.5 * base))
+             if clash_score > 0.6 or t_gap > 6.0:
+                 # Shorten, but keep at least the guarded minimum to avoid 5s "hiccup" transitions
+                 transition_duration = max(min_dur, min(max_dur, ideal_dur))
+                 print(f"  🧠 Agentic Override: Shortening requested {base:.1f}s to {transition_duration:.1f}s (Clash: {clash_score:.2f}, ΔTempo: {t_gap:.1f} BPM)")
+             else:
+                 # Respect user request but clamp to sane bounds
+                 transition_duration = max(min_dur, min(max_dur, base))
+        else:
+            # No suggestion: keep within healthy DJ window
+            transition_duration = max(8.0, min(45.0, ideal_dur))
+            
+        return float(transition_duration)

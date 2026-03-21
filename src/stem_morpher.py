@@ -62,6 +62,48 @@ class StemMorpher:
         self.hop_length = n_fft // 4
 
     # ====================================================================
+    #  AUDIO QUALITY HELPERS
+    # ====================================================================
+
+    def _remove_dc_and_clean(self, y: np.ndarray) -> np.ndarray:
+        """
+        Remove DC offset and sub-sonic content after STFT→ISTFT round-trips.
+        Applies a 20Hz high-pass filter to eliminate the 'aux jack rumble'.
+        """
+        # Remove DC offset
+        y = y - np.mean(y)
+        # High-pass at 20Hz to kill sub-sonic drift
+        nyq = self.sr / 2
+        cutoff = 20.0 / nyq
+        if cutoff < 0.999:
+            try:
+                sos = signal.butter(2, cutoff, btype='high', output='sos')
+                y = signal.sosfiltfilt(sos, y).astype(y.dtype)
+            except Exception:
+                pass
+        return y
+
+    def _soft_limit(self, y: np.ndarray, ceiling: float = 0.95) -> np.ndarray:
+        """
+        Soft-limit via tanh to prevent digital clipping.
+        Preserves transient shape instead of hard-clipping.
+        """
+        peak = np.max(np.abs(y))
+        if peak > ceiling:
+            # Scale into tanh range, then rescale to ceiling
+            y = np.tanh(y / peak * 1.5) * ceiling
+        return y
+
+    def _match_rms(self, processed: np.ndarray, reference: np.ndarray) -> np.ndarray:
+        """
+        Match the RMS level of processed audio to the reference.
+        Prevents morphing from changing perceived volume.
+        """
+        ref_rms = np.sqrt(np.mean(reference ** 2)) + 1e-10
+        proc_rms = np.sqrt(np.mean(processed ** 2)) + 1e-10
+        return processed * (ref_rms / proc_rms)
+
+    # ====================================================================
     #  PUBLIC API
     # ====================================================================
 
@@ -285,13 +327,17 @@ class StemMorpher:
 
             # Apply techniques in priority order — each builds on the last
             current = stem_audio.copy()
+            input_rms = np.sqrt(np.mean(stem_audio ** 2))  # Save for RMS matching
             for tech in techniques:
                 try:
                     if tech == 'spectral_envelope':
-                        current = self._apply_spectral_envelope_morph(
-                            current, target, depth
-                        )
-                        stem_report['techniques_applied'].append('spectral_envelope')
+                        if stem_name in ['vocals', 'other']:
+                            stem_report['techniques_applied'].append('bypassed_spectral_envelope_on_vocals')
+                        else:
+                            current = self._apply_spectral_envelope_morph(
+                                current, target, depth
+                            )
+                            stem_report['techniques_applied'].append('spectral_envelope')
 
                     elif tech == 'onset_replacement' and stem_name == 'drums':
                         current = self._apply_onset_replacement(
@@ -306,10 +352,13 @@ class StemMorpher:
                         stem_report['techniques_applied'].append('chroma_modulation')
 
                     elif tech == 'cross_synthesis':
-                        current = self._apply_cross_synthesis(
-                            current, target, depth
-                        )
-                        stem_report['techniques_applied'].append('cross_synthesis')
+                        if stem_name in ['vocals', 'other']:
+                            stem_report['techniques_applied'].append('bypassed_cross_synthesis_on_vocals')
+                        else:
+                            current = self._apply_cross_synthesis(
+                                current, target, depth
+                            )
+                            stem_report['techniques_applied'].append('cross_synthesis')
 
                     elif tech == 'multiband_crossfade':
                         current = self._apply_multiband_crossfade(
@@ -319,6 +368,16 @@ class StemMorpher:
 
                 except Exception as e:
                     stem_report[f'{tech}_error'] = str(e)
+
+            # ── Post-morph quality chain ──
+            # 1. RMS-match to input so morphing doesn't change volume
+            current = self._match_rms(current, stem_audio)
+            # 2. Soft-limit to prevent digital overs
+            if current.ndim == 1:
+                current = self._soft_limit(current)
+            else:
+                for ch in range(current.shape[1]):
+                    current[:, ch] = self._soft_limit(current[:, ch])
 
             morphed[stem_name] = current
             report[stem_name] = stem_report
@@ -398,8 +457,8 @@ class StemMorpher:
         # Per-frame: compute gain = lerp between 1.0 and target/source ratio
         eps = 1e-10
         gain_ratio = (env_tgt + eps) / (env_src + eps)
-        # Clamp extreme gains to avoid distortion
-        gain_ratio = np.clip(gain_ratio, 0.25, 4.0)
+        # Clamp extreme gains — 2x max prevents harsh resonance spikes
+        gain_ratio = np.clip(gain_ratio, 0.5, 2.0)
 
         # Interpolate: at progress=0 → gain=1.0, at progress=depth → gain=ratio
         gain = np.ones_like(gain_ratio)
@@ -411,6 +470,8 @@ class StemMorpher:
         S_morphed = mag_morphed * np.exp(1j * phase_src)
 
         y_morphed = librosa.istft(S_morphed, hop_length=self.hop_length, length=n)
+        # Remove DC offset and sub-sonic content introduced by STFT round-trip
+        y_morphed = self._remove_dc_and_clean(y_morphed)
         return y_morphed.astype(np.float32)
 
     # ====================================================================
@@ -742,34 +803,58 @@ class StemMorpher:
         # Clamp to reasonable range to avoid artifacts
         shift_per_frame = np.clip(shift_per_frame, -4.0, 4.0)
 
-        # Apply per-chunk pitch shifts
-        result = source.copy()
+        # Apply per-chunk pitch shifts with overlap-add to eliminate clicks
+        result = np.zeros_like(source)
+        weight = np.zeros(n)  # Accumulate weights for normalization
         samples_per_frame = chroma_hop
+        # 50% overlap with Hann window
+        overlap = samples_per_frame // 2
+        window = np.hanning(samples_per_frame).astype(np.float64)
 
         for i in range(n_frames):
             shift = shift_per_frame[i]
-            if abs(shift) < 0.05:
-                continue
 
-            start = i * samples_per_frame
+            start = i * samples_per_frame - overlap  # Overlap into previous
+            start = max(0, start)
             end = min(start + samples_per_frame, n)
-            chunk = source[start:end]
+            chunk = source[start:end].copy()
 
             if len(chunk) < 512:
+                # Too short to process — just accumulate original
+                actual_len = end - start
+                w = window[:actual_len] if actual_len <= len(window) else np.ones(actual_len)
+                result[start:end] += chunk * w[:actual_len]
+                weight[start:end] += w[:actual_len]
+                continue
+
+            if abs(shift) < 0.05:
+                # No shift needed — accumulate original with window
+                actual_len = end - start
+                w = window[:actual_len] if actual_len <= len(window) else np.ones(actual_len)
+                result[start:end] += chunk * w[:actual_len]
+                weight[start:end] += w[:actual_len]
                 continue
 
             try:
                 shifted = librosa.effects.pitch_shift(
                     chunk, sr=self.sr, n_steps=float(shift)
                 )
-                # Micro crossfade at boundaries (10ms)
-                cf = min(int(0.01 * self.sr), len(shifted) // 4)
-                if cf > 0:
-                    t = np.linspace(0, 1, cf)
-                    shifted[:cf] = result[start:start + cf] * (1 - t) + shifted[:cf] * t
-                result[start:end] = shifted[:end - start]
+                actual_len = min(len(shifted), end - start)
+                w = window[:actual_len] if actual_len <= len(window) else np.ones(actual_len)
+                result[start:start + actual_len] += shifted[:actual_len] * w[:actual_len]
+                weight[start:start + actual_len] += w[:actual_len]
             except Exception:
-                pass
+                actual_len = end - start
+                w = window[:actual_len] if actual_len <= len(window) else np.ones(actual_len)
+                result[start:end] += chunk * w[:actual_len]
+                weight[start:end] += w[:actual_len]
+
+        # Normalize by accumulated weights (avoid division by zero)
+        weight = np.maximum(weight, 1e-10)
+        result /= weight
+
+        # Clean up any DC introduced by the process
+        result = self._remove_dc_and_clean(result)
 
         return result.astype(np.float32)
 
@@ -835,18 +920,28 @@ class StemMorpher:
         mag_morphed = np.zeros_like(mag_src)
         phase_morphed = np.zeros_like(phase_src)
 
+        # Frequency bin indices for bass phase lock (below 200Hz)
+        freqs = np.fft.rfftfreq(self.n_fft, 1.0 / self.sr)
+        bass_mask = freqs < 200.0  # Lock phase for bass frequencies
+
         for i in range(n_frames):
             p = progress[i]
             mag_morphed[:, i] = mag_src[:, i] * (1 - p) + mag_tgt[:, i] * p
 
-            # Circular phase interpolation (handles wrapping at ±π)
+            # Circular phase interpolation — REDUCED to 0.3x to avoid phasing
             phase_diff = phase_tgt[:, i] - phase_src[:, i]
             # Wrap to [-π, π]
             phase_diff = np.arctan2(np.sin(phase_diff), np.cos(phase_diff))
-            phase_morphed[:, i] = phase_src[:, i] + phase_diff * p
+            phase_blend = phase_src[:, i] + phase_diff * (p * 0.3)
+            # Bass phase lock: below 200Hz always use source phase
+            phase_blend[bass_mask[:len(phase_blend)]] = phase_src[bass_mask[:len(phase_blend)], i]
+            phase_morphed[:, i] = phase_blend
 
         S_morphed = mag_morphed * np.exp(1j * phase_morphed)
         y_morphed = librosa.istft(S_morphed, hop_length=self.hop_length, length=n)
+
+        # Remove DC offset from STFT round-trip
+        y_morphed = self._remove_dc_and_clean(y_morphed)
 
         # Energy matching: keep the result at source's overall level
         src_rms = np.sqrt(np.mean(source ** 2)) + 1e-10
@@ -906,6 +1001,7 @@ class StemMorpher:
         ]
 
         result = np.zeros(n)
+        src_band_sum = np.zeros(n)  # Track filter bank reconstruction
         nyq = self.sr / 2
 
         for band in bands:
@@ -916,6 +1012,7 @@ class StemMorpher:
             # Bandpass filter on both
             src_band = self._bandpass(source, low_hz, high_hz)
             tgt_band = self._bandpass(target, low_hz, high_hz)
+            src_band_sum += src_band  # Accumulate for residual correction
 
             # Create time-varying crossfade curve for this band
             t = np.linspace(0, 1, n)
@@ -930,6 +1027,17 @@ class StemMorpher:
             # Blend
             blended = src_band * (1.0 - morph_progress) + tgt_band * morph_progress
             result += blended
+
+        # ── Residual correction ──
+        # Filter banks don't perfectly reconstruct the signal.
+        # Add back the residual (source - sum_of_bands) to prevent bass rumble.
+        residual = source - src_band_sum
+        # Only add the unmorphed portion of the residual (fade it out with depth)
+        residual_fade = np.linspace(1.0, 1.0 - depth, n)
+        result += residual * residual_fade
+
+        # Clean up DC from filter operations
+        result = self._remove_dc_and_clean(result)
 
         return result.astype(np.float32)
 

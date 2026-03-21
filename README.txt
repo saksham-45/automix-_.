@@ -297,7 +297,7 @@ mixer = SmartMixer()
 mixed_audio = mixer.create_smooth_mix(
     'song_a.wav',
     'song_b.wav',
-    transition_duration=16.0
+    transition_duration=30.0
 )
 
 # Save result

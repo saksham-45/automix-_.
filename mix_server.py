@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
 """Flask server: YouTube Playlist AutoMixer"""
 import sys
+import logging
 from pathlib import Path
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
 # Project root setup
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
-CACHE_DIR = PROJECT_ROOT / "data" / "cache" / "stream"
 
-# Import StreamManager (it will be available since we added PROJECT_ROOT to sys.path)
-# We need to make sure src.stream_manager is importable.
-# Since PROJET_ROOT contains src/, "import src.stream_manager" works.
 from src.stream_manager import manager
+from src.settings import CACHE_DIR, HOST, PORT
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
+logger = logging.getLogger("mix_server")
 
 app = Flask(__name__, template_folder=str(PROJECT_ROOT / "templates"), static_folder=str(PROJECT_ROOT / "static"))
 app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024  # 1MB for requests
@@ -38,7 +42,8 @@ def start_playlist():
             
         return jsonify({"session_id": sid})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.exception("start_playlist failed")
+        return jsonify({"error": "Failed to start playlist"}), 500
 
 @app.route("/api/session/<sid>")
 def get_session_status(sid):
@@ -68,12 +73,21 @@ def get_session_status(sid):
         
     return jsonify({
         "status": session.status,
-        "chunks": chunks_data
+        "chunks": chunks_data,
+        "continuous_url": f"/api/session/{sid}/continuous" if getattr(session, "continuous_ready", False) else None
     })
 
 @app.route("/api/audio/<filename>")
 def serve_audio(filename):
     return send_from_directory(CACHE_DIR, filename)
 
+@app.route("/api/session/<sid>/continuous")
+def serve_continuous(sid):
+    session = manager.get_session(sid)
+    if not session or not getattr(session, "continuous_ready", False):
+        return jsonify({"error": "Continuous stream not ready"}), 404
+    return send_from_directory(CACHE_DIR, Path(session.continuous_path).name, mimetype="audio/wav")
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5005, debug=False, threaded=True, use_reloader=False)
+    logger.info("Starting server on %s:%s", HOST, PORT)
+    app.run(host=HOST, port=PORT, debug=False, threaded=True, use_reloader=False)

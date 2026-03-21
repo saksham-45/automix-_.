@@ -366,15 +366,18 @@ class SmartTransitionFinder:
                                          at_gap: bool = False,
                                          in_last_stage: bool = False) -> float:
         """Score a single transition point candidate.
-        Prefer points with vocals; in last stage prefer gaps (beat playing, natural mix point)."""
+        Outgoing: prefer low-vocal or gap points to avoid vocal-on-vocal clashes.
+        Incoming: favour musical intros/builds with rising energy."""
         score = 0.5  # Base score
         
         if is_outgoing:
-            # Prefer points where vocals are present (don't pick purely instrumental when vocals exist)
-            if vocal_presence > 0.35:
-                score += 0.2
-            elif vocal_presence > 0.25:
-                score += 0.1
+            # Prefer low-vocal sections; penalize heavy vocals to reduce overlap risk
+            if vocal_presence > 0.45:
+                score -= 0.25
+            elif vocal_presence > 0.35:
+                score -= 0.15
+            else:
+                score += 0.05  # slight bonus for instrumental-ish sections
             # In last stage: prefer gaps (brief dip between phrases, beat still playing) - natural mix point
             if in_last_stage and at_gap and energy > 0.05:
                 score += 0.25  # Gap when beat playing = ideal
@@ -837,4 +840,3 @@ class SmartTransitionFinder:
             return float(np.clip(overlap_risk, 0, 1))
         except:
             return 0.5  # Fallback
-

@@ -8,6 +8,7 @@ import shutil
 from pathlib import Path
 from typing import Optional, List, Tuple, Dict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from src.settings import YTDLP_EXTRACTOR_ARGS, DOWNLOAD_TIMEOUT_SEC
 
 
 def download_youtube_audio(url: str, output_path: Path, 
@@ -52,14 +53,14 @@ def download_youtube_audio(url: str, output_path: Path,
         '--audio-format', 'wav',
         '--audio-quality', '0',  # Best quality
         '--no-playlist',
-        '--extractor-args', 'youtube:player_client=android',
+        '--extractor-args', YTDLP_EXTRACTOR_ARGS,
         '-o', str(temp_output).replace('.wav', '.%(ext)s'),
         url
     ]
     
     try:
         # Add timeout to prevent hanging forever (120s for download)
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=120)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=DOWNLOAD_TIMEOUT_SEC)
         
         # yt-dlp outputs with pattern: temp_song_a.wav or temp_song_a.opus (then converts)
         # Find any file that matches our temp pattern

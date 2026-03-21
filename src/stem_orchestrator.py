@@ -323,28 +323,47 @@ class StemOrchestrator:
             curve_a = np.ones(n_samples)
             curve_b = np.zeros(n_samples)
             
-            # Find when this specific stem should transition
-            if stem in reveal_order:
-                idx = reveal_order.index(stem)
-                start_ratio = reveal_starts[idx]
+            if stem in ['vocals', 'other']:
+                # The user explicitly wants NO vocals/complex synths during the intense
+                # middle section of the morph to prevent "128kbps mp3" smearing artifacts.
+                # A fades out early (0.1 -> 0.3)
+                # B fades in late (0.7 -> 0.9)
+                start_a = int(n_samples * 0.1)
+                end_a = int(n_samples * 0.3)
+                if end_a > start_a:
+                    t_out = np.linspace(0, 1, end_a - start_a)
+                    curve_a[start_a:end_a] = 0.5 * (1 + np.cos(np.pi * t_out))
+                    curve_a[end_a:] = 0.0
+                
+                start_b = int(n_samples * 0.7)
+                end_b = int(n_samples * 0.9)
+                if end_b > start_b:
+                    t_in = np.linspace(0, 1, end_b - start_b)
+                    curve_b[start_b:end_b] = 0.5 * (1 - np.cos(np.pi * t_in))
+                    curve_b[end_b:] = 1.0
             else:
-                start_ratio = 0.5
+                # Find when this specific stem should transition
+                if stem in reveal_order:
+                    idx = reveal_order.index(stem)
+                    start_ratio = reveal_starts[idx]
+                else:
+                    start_ratio = 0.5
+                    
+                start_sample = int(n_samples * start_ratio)
+                fade_samples = int(n_samples * fade_duration_ratio)
+                end_sample = min(n_samples, start_sample + fade_samples)
                 
-            start_sample = int(n_samples * start_ratio)
-            fade_samples = int(n_samples * fade_duration_ratio)
-            end_sample = min(n_samples, start_sample + fade_samples)
-            
-            if end_sample > start_sample:
-                t = np.linspace(0, 1, end_sample - start_sample)
-                # S-curve crossfade
-                fade_out = 0.5 * (1 + np.cos(np.pi * t))
-                fade_in = 0.5 * (1 - np.cos(np.pi * t))
-                
-                curve_a[start_sample:end_sample] = fade_out
-                curve_a[end_sample:] = 0.0
-                
-                curve_b[start_sample:end_sample] = fade_in
-                curve_b[end_sample:] = 1.0
+                if end_sample > start_sample:
+                    t = np.linspace(0, 1, end_sample - start_sample)
+                    # S-curve crossfade
+                    fade_out = 0.5 * (1 + np.cos(np.pi * t))
+                    fade_in = 0.5 * (1 - np.cos(np.pi * t))
+                    
+                    curve_a[start_sample:end_sample] = fade_out
+                    curve_a[end_sample:] = 0.0
+                    
+                    curve_b[start_sample:end_sample] = fade_in
+                    curve_b[end_sample:] = 1.0
             
             # Smooth out curves
             curve_a = gaussian_filter1d(curve_a, sigma=500)
@@ -1072,6 +1091,50 @@ class StemOrchestrator:
             stem_a = stems_a.get(stem_name, np.zeros(n_samples))
             stem_b = stems_b.get(stem_name, np.zeros(n_samples))
             
+            # --- 1. HPF on non-bass stems (60-90Hz) ---
+            if stem_name not in ['bass', 'drums']:
+                try:
+                    from scipy import signal as sig
+                    nyq = self.sr / 2
+                    sos_hp = sig.butter(2, 80.0 / nyq, btype='high', output='sos')
+                    if stem_a.ndim == 2:
+                        for ch in range(stem_a.shape[1]):
+                            stem_a[:, ch] = sig.sosfiltfilt(sos_hp, stem_a[:, ch])
+                            stem_b[:, ch] = sig.sosfiltfilt(sos_hp, stem_b[:, ch])
+                    else:
+                        stem_a = sig.sosfiltfilt(sos_hp, stem_a)
+                        stem_b = sig.sosfiltfilt(sos_hp, stem_b)
+                except Exception:
+                    pass
+            
+            # --- 2. Control sub rumble: sidechain bass from drums ---
+            if stem_name == 'bass':
+                try:
+                    drums_a = stems_a.get('drums', np.zeros_like(stem_a))
+                    drums_b = stems_b.get('drums', np.zeros_like(stem_b))
+                    
+                    def apply_ducking(bass_arr, drum_arr):
+                        if np.max(np.abs(drum_arr)) < 1e-4: return bass_arr
+                        drum_env = np.abs(np.mean(drum_arr, axis=1) if drum_arr.ndim == 2 else drum_arr)
+                        # smooth envelope
+                        try:
+                            nyq = self.sr / 2
+                            sos_env = sig.butter(1, 20.0 / nyq, btype='low', output='sos')
+                            drum_env = sig.sosfiltfilt(sos_env, drum_env)
+                        except Exception:
+                            pass
+                        # heavy ducking on kick (loudest drum parts)
+                        thresh = np.mean(drum_env) * 1.5
+                        duck_gain = np.clip(1.0 - (np.maximum(0, drum_env - thresh) * 2.0), 0.3, 1.0)
+                        if bass_arr.ndim == 2:
+                            return bass_arr * duck_gain[:, np.newaxis]
+                        return bass_arr * duck_gain
+                        
+                    stem_a = apply_ducking(stem_a, drums_a)
+                    stem_b = apply_ducking(stem_b, drums_b)
+                except Exception:
+                    pass
+            
             # Get curves
             curve_spec = curves.get(stem_name, {})
             curve_a = np.array(curve_spec.get('a', [1.0] * n_samples))
@@ -1118,12 +1181,19 @@ class StemOrchestrator:
             if role_plan is not None and conv_type != 'vocal_overlay_handoff':
                 bed_src = role_plan.get('bed_source', 'a')
                 vocal_src = role_plan.get('vocal_source', 'a')
+                drum_keep = role_plan.get('bed_source', 'a')
                 
                 if stem_name == 'vocals':
                     # Only keep the chosen vocal source; mute the other.
                     if vocal_src == 'a':
                         curve_b = np.zeros_like(curve_b)
                     elif vocal_src == 'b':
+                        curve_a = np.zeros_like(curve_a)
+                elif stem_name == 'drums':
+                    # Force single drum owner to avoid dual-kit clashes.
+                    if drum_keep == 'a':
+                        curve_b = np.zeros_like(curve_b)
+                    elif drum_keep == 'b':
                         curve_a = np.zeros_like(curve_a)
                 else:
                     # Non-vocal stems: gently bias towards the chosen bed source
@@ -1179,11 +1249,43 @@ class StemOrchestrator:
         _dbg("mixed output", {"n_samples": n_samples, "rms_first25pct": rms_q1, "max_abs": float(np.max(np.abs(mixed)))})
         #endregion
         
-        # Normalize: mix_at_level => always to 0.95 peak (no dip); else only limit peak
+        # --- 3. Tame distortion/harshness: reduce crossfade gain where loud transients overlap ---
+        try:
+            from scipy import signal as sig
+            energy = np.mean(mixed**2, axis=1) if mixed.ndim == 2 else mixed**2
+            nyq = self.sr / 2
+            sos_env = sig.butter(2, 10.0 / nyq, btype='low', output='sos')
+            smooth_energy = sig.sosfiltfilt(sos_env, energy)
+            threshold = np.mean(smooth_energy) * 3.0
+            if threshold > 0:
+                # Duck the mix slightly during massive transient pile-ups
+                gain_reduction = np.clip(threshold / (smooth_energy + 1e-10), 0.7, 1.0)
+                if mixed.ndim == 2:
+                    mixed *= gain_reduction[:, np.newaxis]
+                else:
+                    mixed *= gain_reduction
+        except Exception:
+            pass
+
+        # --- 4. Transition tails: lower crossfade depth slightly in the last ~5s ---
+        tail_samples = int(5.0 * self.sr)
+        if len(mixed) > tail_samples:
+            tail_curve = np.linspace(1.0, 0.85, tail_samples)
+            if mixed.ndim == 2:
+                mixed[-tail_samples:] *= tail_curve[:, np.newaxis]
+            else:
+                mixed[-tail_samples:] *= tail_curve
+        
+        # --- 5. Soft-limit output + enforce headroom ---
+        # Target: -2 dBTP (0.794) for hot transitions, -1 dBTP (0.891) for normal
         max_val = np.max(np.abs(mixed))
         if max_val > 1e-12:
-            target = 0.95
-            if mix_at_level or max_val > target:
+            target = 0.79433 if mix_at_level else 0.89125
+            if max_val > target:
+                # Soft-limit via tanh — preserves transient shape vs hard normalization
+                mixed = np.tanh(mixed / max_val * 1.5) * target
+            else:
+                # Normalize up to target safely
                 mixed = mixed * (target / max_val)
         
         return mixed

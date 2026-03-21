@@ -307,7 +307,7 @@ def main():
             mixed = mixer.create_superhuman_mix(
                 str(song_a_path),
                 str(song_b_path),
-                transition_duration=16.0,
+                transition_duration=30.0,
                 creativity_level=0.6,
                 optimize_quality=True,
             )

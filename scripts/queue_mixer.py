@@ -204,8 +204,8 @@ Examples:
                            help='Output file path (default: auto-generate)')
     parser_mix.add_argument('--duration', type=int, default=60,
                            help='Segment duration per song (seconds, default: 60)')
-    parser_mix.add_argument('--transition-duration', type=float, default=16.0,
-                           help='Transition duration (seconds, default: 16.0)')
+    parser_mix.add_argument('--transition-duration', type=float, default=30.0,
+                           help='Transition duration (seconds, default: 30.0)')
     parser_mix.add_argument('--streaming', action='store_true',
                            help='Use streaming mode (segment-based downloads, faster)')
     parser_mix.add_argument('--buffer-seconds', type=int, default=60,

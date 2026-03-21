@@ -50,7 +50,7 @@ class ContinuousMixer:
                      queue_path: str = "data/queue.json",
                      output_path: str = None,
                      segment_duration: int = 60,
-                     transition_duration: float = 16.0,
+                     transition_duration: float = 30.0,
                      max_workers: int = 4) -> Path:
         """
         Process entire queue into continuous mix.
@@ -264,7 +264,7 @@ class ContinuousMixer:
                                queue_path: str = "data/queue.json",
                                output_path: str = None,
                                segment_duration: int = 60,
-                               transition_duration: float = 16.0,
+                               transition_duration: float = 30.0,
                                buffer_seconds: int = 60) -> Path:
         """
         Process queue with streaming: download segments on-demand.
