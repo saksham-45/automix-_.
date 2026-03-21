@@ -25,8 +25,8 @@ def main():
                        help='Path to Song B (incoming)')
     parser.add_argument('--output', '-o', type=str, default='smooth_mix.wav',
                        help='Output mix file')
-    parser.add_argument('--duration', type=float, default=16.0,
-                       help='Transition duration in seconds (default: 16)')
+    parser.add_argument('--duration', type=float, default=30.0,
+                       help='Transition duration in seconds (default: 30)')
     parser.add_argument('--use-ai', action='store_true',
                        help='Use AI model for volume curves')
     parser.add_argument('--model-dir', type=str, default='models/',
@@ -112,4 +112,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

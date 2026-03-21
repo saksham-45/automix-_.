@@ -12,12 +12,9 @@ from concurrent.futures import ThreadPoolExecutor
 from src.smart_mixer import SmartMixer
 from src.youtube_downloader import download_youtube_audio
 from scripts.mix_playlist import fetch_playlist_video_ids
+from src.settings import TRANSITION_LENGTH, TRANSITION_WINDOW, CACHE_DIR, SR  # type: ignore
 
-# Constants
-TRANSITION_WINDOW = 124.0  # Seconds of audio to grab from ends for mixing (standard matching create_mix_from_youtube)
-TRANSITION_LENGTH = 84.0  # Target overlap duration (84s as per user requirement)
-SR = 44100
-CACHE_DIR = Path("data/cache/stream")
+# Ensure cache directory exists early
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 # Keep strict playlist order for streaming stability.
 ENABLE_SMART_QUEUE = False
@@ -215,14 +212,14 @@ class StreamSession:
                     continue
                 
                 # --- FIX: LCD (Loudness Consistency enforcement) ---
-                # Normalize entire track to -14 LUFS to match transition processing
+                # Normalize entire track to target LUFS to match transition processing
                 # This prevents the "blink of eye" volume jump between Body and Transition
                 try:
                     from src.psychoacoustics import PsychoacousticAnalyzer
                     analyzer = PsychoacousticAnalyzer(sr=SR)
                     analysis = analyzer.analyze_loudness_lufs(next_y)
                     lufs = analysis.get('integrated_lufs', -23.0)
-                    target_lufs = -14.0
+                    target_lufs = float(__import__('src.settings', fromlist=['LUFS_TARGET']).LUFS_TARGET)
                     gain_db = target_lufs - lufs
                     if ENABLE_SMART_QUEUE and smart_q is not None:
                         next_meta = smart_q.get_preview_metadata(next_item['url'], next_item['id'])
@@ -281,6 +278,10 @@ class StreamSession:
                     except Exception:
                         a_transition_start_in_snippet = 0
                     a_transition_start_in_snippet = max(0, min(len(snippet_a), a_transition_start_in_snippet))
+                    # Guard: never drop more than the intended transition length from Song A.
+                    min_transition_start = max(0, len(snippet_a) - int(TRANSITION_LENGTH * SR))
+                    if a_transition_start_in_snippet < min_transition_start:
+                        a_transition_start_in_snippet = min_transition_start
 
                     # Where should Song B resume after the transition?
                     try:

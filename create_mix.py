@@ -86,7 +86,7 @@ except: pass
 mixed_audio = mixer.create_smooth_mix(
     'temp_audio/song_a.wav',
     'temp_audio/song_b.wav',
-    transition_duration=16.0,
+    transition_duration=30.0,
     ai_transition_data=ai_data
 )
 

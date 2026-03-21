@@ -48,7 +48,7 @@ def run_youtube_mix(url1: str, url2: str, output_path: Path, duration: int = 60)
         mixed_audio = mixer.create_superhuman_mix(
             str(song_a),
             str(song_b),
-            transition_duration=16.0,
+            transition_duration=30.0,
             creativity_level=0.6,
             optimize_quality=True,
         )

@@ -253,6 +253,21 @@ python -c "import librosa, numpy, torch, demucs; print('✓ All dependencies ins
 
 ## Quick Start
 
+### Run the web mixer (production-friendly)
+
+```bash
+pip install -r requirements.txt
+cp .env.example .env   # optional; tweak values if needed
+python3 mix_server.py
+```
+
+Then open http://127.0.0.1:5005 and paste a YouTube playlist.
+
+Notes:
+- `ENABLE_AGENTIC_DURATION=false` keeps predictable 30s overlaps.
+- Cache and temp paths (`CACHE_DIR`, `TEMP_DIR`) are set via env and are gitignored.
+- Heavy stem separation is optional; install the commented torch/demucs extras only when you have GPU capacity.
+
 ### Generate a Mix from YouTube URLs
 
 ```bash
@@ -314,7 +329,7 @@ mixer = SmartMixer()
 mixed_audio = mixer.create_smooth_mix(
     'song_a.wav',
     'song_b.wav',
-    transition_duration=16.0
+    transition_duration=30.0
 )
 
 # Save result

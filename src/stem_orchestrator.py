@@ -1181,12 +1181,19 @@ class StemOrchestrator:
             if role_plan is not None and conv_type != 'vocal_overlay_handoff':
                 bed_src = role_plan.get('bed_source', 'a')
                 vocal_src = role_plan.get('vocal_source', 'a')
+                drum_keep = role_plan.get('bed_source', 'a')
                 
                 if stem_name == 'vocals':
                     # Only keep the chosen vocal source; mute the other.
                     if vocal_src == 'a':
                         curve_b = np.zeros_like(curve_b)
                     elif vocal_src == 'b':
+                        curve_a = np.zeros_like(curve_a)
+                elif stem_name == 'drums':
+                    # Force single drum owner to avoid dual-kit clashes.
+                    if drum_keep == 'a':
+                        curve_b = np.zeros_like(curve_b)
+                    elif drum_keep == 'b':
                         curve_a = np.zeros_like(curve_a)
                 else:
                     # Non-vocal stems: gently bias towards the chosen bed source

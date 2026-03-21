@@ -57,7 +57,7 @@ class SuperhumanDJEngine:
             'enable_montecarlo_optimization': True,
             'montecarlo_simulations': 30,
             'creativity_level': 0.6,  # 0.0 = conservative, 1.0 = experimental
-            'quality_threshold': 0.55,
+            'quality_threshold': 0.65,
             # Vocal/bed swap + tempo morph behaviour (can be tuned from config.yaml)
             'vocal_bed_swap_enabled': True,
             # Maximum fractional tempo shift during overlap (e.g. 0.06 ~= 6%)
@@ -273,8 +273,8 @@ class SuperhumanDJEngine:
                 }
         else:
             selected_technique = {
-                'techniques': techniques if techniques else ['long_blend'],
-                'weights': [1.0 / len(techniques)] * len(techniques) if techniques else [1.0]
+                'techniques': ['long_blend'],
+                'weights': [1.0]
             }
 
         # Diversify selected technique to avoid repeatedly using the same preset/type.
@@ -299,6 +299,29 @@ class SuperhumanDJEngine:
             }
         if diversity_note:
             analysis['technique']['diversity_note'] = diversity_note
+        # Hard conflict guard: force conservative techniques when clash risk is high.
+        spectral_conflict = float(frequency_negotiation.get('overall_conflict', 0.0) or 0.0)
+        high_conflict = (
+            spectral_conflict >= 0.5
+            or (stems_a is not None and 'drums' in stems_a and stems_b is not None and 'drums' in stems_b)
+        )
+        if high_conflict:
+            selected_technique = {
+                'name': 'clash_safe',
+                'techniques': ['phrase_match', 'bass_swap'],
+                'weights': [0.6, 0.4],
+                'complexity': 0.3,
+                'boldness': 0.2,
+            }
+            analysis['technique'] = {
+                'type': 'hybrid',
+                'name': selected_technique.get('name'),
+                'techniques': selected_technique.get('techniques'),
+                'weights': selected_technique.get('weights'),
+                'complexity': selected_technique.get('complexity', 0.5),
+                'boldness': selected_technique.get('boldness', 0.5),
+                'safety_override': f"forced clash-safe (spectral_conflict={spectral_conflict:.2f})"
+            }
         
         analysis['timings']['technique_selection'] = time.time() - stage_start
         analysis['stages'].append('technique_selected')
@@ -311,7 +334,7 @@ class SuperhumanDJEngine:
             primary_technique = selected_technique['techniques'][0]
             should_proceed, prediction = self.montecarlo.should_proceed(
                 seg_a, seg_b, primary_technique, {},
-                threshold=self.config.get('quality_threshold', 0.55)
+                threshold=self.config.get('quality_threshold', 0.65)
             )
             analysis['prediction'] = {
                 'predicted_quality': prediction['predicted_quality'],
@@ -379,11 +402,34 @@ class SuperhumanDJEngine:
                 analysis,
                 stem_analysis
             )
+            
             if role_plan is not None:
                 # When B's vocals/drums layer over A's content, B must match A's BPM so the overlap is in sync
                 if recommended_conv in ('melody_a_drums_vocals_b', 'vocal_overlay_handoff'):
                     role_plan['tempo_target'] = 'a'
                 analysis['vocal_bed_plan'] = role_plan
+                
+                # ENFORCE: One vocal must absolutely go!
+                vocal_src = role_plan.get('vocal_source', 'a')
+                if vocal_src == 'a':
+                    if 'vocals' in stems_b:
+                        # Print always if we are muting
+                        print(f"    🎤 Agentic Mute: Song B vocals killed (Continuity: Song A vocals kept)")
+                        stems_b['vocals'] = np.zeros_like(stems_b['vocals'])
+                        # Also zero out 'other' if clash is extreme
+                        if analysis.get('spectral', {}).get('overall_conflict', 0.0) > 0.75:
+                             print(f"    🎸 Extreme Conflict: Song B 'other' stem also muted")
+                             stems_b['other'] = np.zeros_like(stems_b['other'])
+                elif vocal_src == 'b':
+                    if 'vocals' in stems_a:
+                        print(f"    🎤 Agentic Mute: Song A vocals killed (Handoff: Song B vocals kept)")
+                        stems_a['vocals'] = np.zeros_like(stems_a['vocals'])
+                        if analysis.get('spectral', {}).get('overall_conflict', 0.0) > 0.75:
+                             print(f"    🎸 Extreme Conflict: Song A 'other' stem also muted")
+                             stems_a['other'] = np.zeros_like(stems_a['other'])
+            else:
+                print("    ℹ️ No vocal-bed swap required (no vocals or low conflict)")
+
         
         analysis['timings']['stem_orchestration'] = time.time() - stage_start
         analysis['stages'].append('stems_orchestrated')
@@ -734,6 +780,72 @@ class SuperhumanDJEngine:
         
         print(f"  ⏱️ Total processing time: {total_time:.2f}s")
         print(f"  📈 Quality score: {quality['overall_score']:.2f}")
+
+        # ==================== RESCUE: CONSERVATIVE RE-RENDER ====================
+        rescue_needed = (
+            quality.get('overall_score', 0.0) < float(self.config.get('quality_threshold', 0.65))
+            or str(quality.get('recommendation', '')).lower() in {'poor_reject', 'reject', 'retry'}
+        )
+        if rescue_needed and analysis.get('mix_method') != 'safety_fullband_blend':
+            original_recommendation = quality.get('recommendation')
+            try:
+                # Conservative phrase_match re-render
+                from src.technique_executor import TechniqueExecutor
+                cons_exec = TechniqueExecutor(sr=self.sr)
+                cons_params = {'tempo_a': tempo_a, 'tempo_b': tempo_b}
+                conservative = cons_exec.execute(
+                    'phrase_match',
+                    seg_a_processed,
+                    seg_b_processed,
+                    cons_params,
+                    stems_a,
+                    stems_b
+                )
+                mixed = conservative
+                analysis['mix_method'] = 'conservative_phrase_match'
+                if self.config['enable_montecarlo_optimization']:
+                    ensemble = self.montecarlo.ensemble_evaluate(mixed, seg_a, seg_b)
+                    quality = {
+                        'overall_score': ensemble['ensemble_mean'],
+                        'confidence': ensemble['confidence'],
+                        'consensus': ensemble['consensus'],
+                        'recommendation': 'conservative_keep',
+                        'individual_scores': ensemble['individual_scores']
+                    }
+                else:
+                    quality = {
+                        'overall_score': max(0.60, float(quality.get('overall_score', 0.0))),
+                        'confidence': quality.get('confidence', 0.5),
+                        'recommendation': 'conservative_keep',
+                    }
+            except Exception:
+                # Last-resort safety blend
+                mixed = self._render_safety_blend(
+                    seg_a_processed,
+                    seg_b_processed,
+                    safety_profile={},
+                    role_plan=role_plan,
+                )
+                analysis['mix_method'] = 'safety_fullband_blend'
+                if self.config['enable_montecarlo_optimization']:
+                    ensemble = self.montecarlo.ensemble_evaluate(mixed, seg_a, seg_b)
+                    quality = {
+                        'overall_score': ensemble['ensemble_mean'],
+                        'confidence': ensemble['confidence'],
+                        'consensus': ensemble['consensus'],
+                        'recommendation': 'rescued_safety_blend',
+                        'individual_scores': ensemble['individual_scores']
+                    }
+                else:
+                    quality = {
+                        'overall_score': max(0.60, float(quality.get('overall_score', 0.0))),
+                        'confidence': quality.get('confidence', 0.5),
+                        'recommendation': 'rescued_safety_blend',
+                    }
+            analysis['safety_recovery'] = {
+                'trigger': 'quality_guard',
+                'original_recommendation': original_recommendation,
+            }
         
         return {
             'mixed': mixed,
@@ -906,10 +1018,24 @@ class SuperhumanDJEngine:
         
         has_vocals_a = stems_a is not None and 'vocals' in stems_a
         has_vocals_b = stems_b is not None and 'vocals' in stems_b
+        has_drums_a = stems_a is not None and 'drums' in stems_a
+        has_drums_b = stems_b is not None and 'drums' in stems_b
         
-        # If we have no vocal stems, keep default behaviour.
+        # If there are no vocals but both songs have drums, still pick a single drum owner
+        # to avoid dual-kit clashes. Otherwise keep default behaviour.
         if not has_vocals_a and not has_vocals_b:
-            return None
+            if not (has_drums_a and has_drums_b):
+                return None
+            # Minimal plan: choose the quieter drum kit as the bed, keep tempo anchored to A
+            energy_a = stem_analysis.get('stems_a', {}).get('drums', {}).get('energy', 0.0)
+            energy_b = stem_analysis.get('stems_b', {}).get('drums', {}).get('energy', 0.0)
+            bed_source = 'a' if energy_a <= energy_b else 'b'
+            return {
+                'bed_source': bed_source,
+                'vocal_source': bed_source,  # no vocals; this keeps logic simple downstream
+                'tempo_target': 'a',
+                'max_tempo_shift_pct': float(self.config.get('max_tempo_shift_pct', 0.06))
+            }
         
         # Basic spectral & tempo info
         spectral = analysis.get('spectral', {})
