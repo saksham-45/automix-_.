@@ -1,2 +1,0 @@
-/Users/saksham/untitled folder 7/venv/lib/python3.13/site-packages/librosa/core/spectrum.py:266: UserWarning: n_fft=2048 is too large for input signal of length=2
-  warnings.warn(
