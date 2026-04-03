@@ -1337,16 +1337,26 @@ class SmartMixer:
         start_time = time.time()
         try:
             # Configure engine with creativity level
-            self.superhuman_engine.configure(creativity_level=creativity_level)
+            self.superhuman_engine.configure(
+                creativity_level=creativity_level,
+                enable_montecarlo_optimization=bool(optimize_quality),
+            )
             
             # Load audio
             print("\n[1/4] Loading audio...")
-            # Optimize RAM: only load sections we need (end of A, start of B)
-            # If the user passed a full path, this saves hundreds of megabytes.
-            # We assume YouTube transitions use ~124s clips.
-            y_a_dur = librosa.get_duration(path=song_a_path)
-            y_a, _ = librosa.load(song_a_path, sr=self.sr, offset=max(0, y_a_dur - 130))
-            y_b, _ = librosa.load(song_b_path, sr=self.sr, duration=130)
+            # Optimize RAM: load only a bounded window from each track.
+            # Important: when callers already provide clipped files (e.g. YouTube downloader),
+            # we should use the FULL clip, not an extra hard-coded 130s sub-clip.
+            max_window_sec = 240.0  # cap to keep memory bounded for very long files
+            y_a_dur = float(librosa.get_duration(path=song_a_path) or 0.0)
+            y_b_dur = float(librosa.get_duration(path=song_b_path) or 0.0)
+
+            a_window_sec = min(y_a_dur, max_window_sec) if y_a_dur > 0 else max_window_sec
+            b_window_sec = min(y_b_dur, max_window_sec) if y_b_dur > 0 else max_window_sec
+            a_offset_sec = max(0.0, y_a_dur - a_window_sec) if y_a_dur > 0 else 0.0
+
+            y_a, _ = librosa.load(song_a_path, sr=self.sr, offset=a_offset_sec, duration=a_window_sec)
+            y_b, _ = librosa.load(song_b_path, sr=self.sr, duration=b_window_sec)
             
             y_a = self._preprocess_file(y_a)
             y_b = self._preprocess_file(y_b)
@@ -1393,6 +1403,28 @@ class SmartMixer:
             if point_a < min_point_a:
                 print(f"  ⚠ Shifting Song A exit from {point_a:.1f}s to {min_point_a:.1f}s to prevent padding")
                 point_a = min_point_a
+
+            # BeatAligner was previously instantiated but never used.
+            # Re-snap points to the nearest beat/downbeat after any clamping/agentic shifts.
+            try:
+                aligned_a, aligned_b = self.beat_aligner.align_beats(
+                    y_a=y_a,
+                    y_b=y_b,
+                    sr=self.sr,
+                    point_a_sec=float(point_a),
+                    point_b_sec=float(point_b),
+                )
+                if aligned_a != point_a or aligned_b != point_b:
+                    print(f"  🥁 BeatAligner: A {point_a:.2f}s→{aligned_a:.2f}s, B {point_b:.2f}s→{aligned_b:.2f}s")
+                point_a, point_b = aligned_a, aligned_b
+            except Exception as e:
+                print(f"  ⚠ BeatAligner failed: {e}")
+
+            # Re-apply padding guards after beat snapping
+            max_point_b = max(0.0, (len(y_b) / self.sr) - transition_duration - 0.5)
+            point_b = min(point_b, max_point_b)
+            min_point_a = min((len(y_a) / self.sr) - 0.5, transition_duration + 0.5)
+            point_a = max(point_a, min_point_a)
             
             print(f"  → Transition: {transition_duration:.1f}s")
             print(f"  → Song A exit: {point_a:.1f}s")
@@ -1589,7 +1621,7 @@ class SmartMixer:
         if suggested_duration is not None:
              base = float(suggested_duration)
              min_dur = max(8.0, 0.6 * base)     # never drop below 60% of the request (or 8s)
-             max_dur = min(45.0, max(24.0, 1.5 * base))
+             max_dur = min(95.0, max(24.0, 1.5 * base))
              if clash_score > 0.6 or t_gap > 6.0:
                  # Shorten, but keep at least the guarded minimum to avoid 5s "hiccup" transitions
                  transition_duration = max(min_dur, min(max_dur, ideal_dur))
@@ -1599,6 +1631,6 @@ class SmartMixer:
                  transition_duration = max(min_dur, min(max_dur, base))
         else:
             # No suggestion: keep within healthy DJ window
-            transition_duration = max(8.0, min(45.0, ideal_dur))
+            transition_duration = max(8.0, min(95.0, ideal_dur))
             
         return float(transition_duration)
