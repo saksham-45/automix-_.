@@ -40,9 +40,11 @@ class CrossfadeEngine:
             fade_in = np.sqrt(0.5 * (1 - np.cos(np.pi * t)))
         
         elif curve_shape == 'fast':
-            # Faster fade (more aggressive)
-            fade_out = np.sqrt((1 - t) ** 2)
-            fade_in = np.sqrt(t ** 2)
+            # Faster (steeper) but still EQUAL POWER: keep fade_out^2 + fade_in^2 == 1.
+            # The old version was sqrt((1-t)^2)=1-t and sqrt(t^2)=t, i.e. LINEAR gains,
+            # which sum to power 0.5 at the midpoint -> an audible ~3 dB dip.
+            fade_out = (1 - t) ** 2
+            fade_in = np.sqrt(np.clip(1.0 - fade_out ** 2, 0.0, 1.0))
         
         else:  # 'smooth' default
             fade_out = np.sqrt(0.5 * (1 + np.cos(np.pi * t)))
@@ -131,17 +133,6 @@ class CrossfadeEngine:
         beat_samples = int(beat_duration_sec * self.sr)
         bar_samples = beat_samples * 4  # 4 beats per bar
         
-        #region agent log
-        import json, os, time
-        _log_path = '/Users/saksham/automix-_./.cursor/debug.log'
-        def _dbg(msg, data):
-            try:
-                os.makedirs(os.path.dirname(_log_path), exist_ok=True)
-                with open(_log_path, 'a') as f:
-                    f.write(json.dumps({"location":"crossfade_engine.create_drum_handoff_curves","message":msg,"data":data,"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"B"}) + '\n')
-            except Exception:
-                pass
-        #endregion
         # Find next downbeat after handoff_ratio
         handoff_sample = int(n_samples * handoff_ratio)
         handoff_sample = max(bar_samples, min(handoff_sample, n_samples - bar_samples))
@@ -179,10 +170,6 @@ class CrossfadeEngine:
             curve_b[b_start_sample:b_end_sample] = 0.5 * (1 - np.cos(np.pi * t))
         curve_b = gaussian_filter1d(np.clip(curve_b, 0, 1), sigma=min(20, max(1, fade_b_samples // 10)))
         curve_b = np.clip(curve_b, 0, 1)
-        #region agent log
-        q1 = min(int(n_samples * 0.1), len(curve_a))
-        _dbg("drum_handoff", {"n_samples": n_samples, "tempo": tempo, "switch_sample": switch_sample, "curve_a_first10pct_mean": float(np.mean(curve_a[:q1])) if q1 > 0 else 0, "curve_a_min": float(np.min(curve_a)), "curve_a_max": float(np.max(curve_a))})
-        #endregion
         return curve_a, curve_b
     
     def create_fast_fade(self, n_samples: int, fade_out_ratio: float = 0.25) -> np.ndarray:
@@ -532,45 +519,15 @@ class CrossfadeEngine:
         if vol_b.ndim == 1:
             vol_b = vol_b[:, np.newaxis]
         
-        #region agent log
-        import json
-        import time
-        import os
-        log_path = '/Users/saksham/untitled folder 7/.cursor/debug.log'
-        os.makedirs(os.path.dirname(log_path), exist_ok=True)  # Ensure directory exists
-        # Test hypothesis D: Log volume application
-        y_a_rms_before = float(np.sqrt(np.mean(y_a[:n_samples]**2))) if n_samples > 0 else 0
-        y_b_rms_before = float(np.sqrt(np.mean(y_b[:n_samples]**2))) if n_samples > 0 else 0
-        vol_a_applied = vol_a[:n_samples] if vol_a.ndim == 2 else vol_a[:n_samples, 0] if vol_a.ndim > 1 else vol_a[:n_samples]
-        vol_b_applied = vol_b[:n_samples] if vol_b.ndim == 2 else vol_b[:n_samples, 0] if vol_b.ndim > 1 else vol_b[:n_samples]
-        vol_a_avg = float(np.mean(np.abs(vol_a_applied))) if len(vol_a_applied) > 0 else 0
-        vol_b_avg = float(np.mean(np.abs(vol_b_applied))) if len(vol_b_applied) > 0 else 0
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"crossfade_engine.py:223","message":"Before mixing in apply_crossfade","data":{"n_samples":n_samples,"y_a_rms_before":y_a_rms_before,"y_b_rms_before":y_b_rms_before,"vol_a_avg":vol_a_avg,"vol_b_avg":vol_b_avg,"vol_a_min":float(np.min(vol_a_applied)) if len(vol_a_applied) > 0 else 0,"vol_a_max":float(np.max(vol_a_applied)) if len(vol_a_applied) > 0 else 0,"vol_b_min":float(np.min(vol_b_applied)) if len(vol_b_applied) > 0 else 0,"vol_b_max":float(np.max(vol_b_applied)) if len(vol_b_applied) > 0 else 0},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
         
         mixed = y_a[:n_samples] * vol_a[:n_samples] + y_b[:n_samples] * vol_b[:n_samples]
         
-        #region agent log
-        # Test hypothesis D: Check if mixing worked correctly
-        mixed_rms_after = float(np.sqrt(np.mean(mixed**2))) if n_samples > 0 else 0
-        mixed_max_after = float(np.max(np.abs(mixed))) if n_samples > 0 else 0
-        # Calculate expected RMS if volumes were applied correctly
-        expected_rms = float(np.sqrt(np.mean((y_a[:n_samples] * vol_a[:n_samples])**2) + np.mean((y_b[:n_samples] * vol_b[:n_samples])**2))) if n_samples > 0 else 0
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"crossfade_engine.py:230","message":"After mixing in apply_crossfade","data":{"mixed_rms":mixed_rms_after,"mixed_max":mixed_max_after,"expected_rms":expected_rms,"n_samples":n_samples},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
         
         # Normalize to prevent clipping
         max_val = np.max(np.abs(mixed))
         if max_val > 0.95:
             mixed = mixed * (0.95 / max_val)
         
-        #region agent log
-        if max_val > 0.95:
-            with open(log_path, 'a') as f:
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"crossfade_engine.py:238","message":"Normalization applied","data":{"max_val_before":max_val,"normalization_factor":0.95/max_val,"mixed_max_after":float(np.max(np.abs(mixed)))},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
         
         return mixed
     

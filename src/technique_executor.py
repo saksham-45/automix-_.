@@ -61,7 +61,13 @@ class TechniqueExecutor:
             'loop_transition': self._execute_loop_transition,
             'breakdown_to_build': self._execute_breakdown_to_build,
             'thematic_handoff': self._execute_thematic_handoff,
-            'progressive_morph': self._execute_progressive_morph
+            'progressive_morph': self._execute_progressive_morph,
+            # These four were implemented but never registered, so the strategist /
+            # hybrid blender selecting them silently fell back to long_blend.
+            'drop_on_the_one': self._execute_drop_on_the_one,
+            'back_and_forth': self._execute_back_and_forth,
+            'drum_roll': self._execute_drum_roll,
+            'washout': self._execute_washout,
         }
         
         if technique_name in method_map:
@@ -941,7 +947,33 @@ class TechniqueExecutor:
         
         shift_a = params.get('shift_a_semitones', 0) or 0
         shift_b = params.get('shift_b_semitones', 0) or 0
-        
+
+        # If no explicit shift was supplied, derive one so the technique actually
+        # modulates instead of degrading to a plain crossfade. Use provided keys,
+        # else detect them from the audio.
+        if shift_a == 0 and shift_b == 0:
+            try:
+                from src.harmonic_analyzer import HarmonicAnalyzer
+                harm = HarmonicAnalyzer(sr=self.sr)
+                key_a = params.get('key_a')
+                key_b = params.get('key_b')
+                if not key_a:
+                    key_a = harm.detect_key_camelot(
+                        seg_a if seg_a.ndim == 1 else seg_a.mean(axis=1)
+                    ).get('key', 'C')
+                if not key_b:
+                    key_b = harm.detect_key_camelot(
+                        seg_b if seg_b.ndim == 1 else seg_b.mean(axis=1)
+                    ).get('key', 'C')
+                max_st = int(params.get('max_semitones', 2))
+                suggestion = harm.suggest_modulation_semitones(
+                    key_a, key_b, strategy='match_b', max_semitones=max_st
+                )
+                shift_a = suggestion.get('shift_a_semitones', 0) or 0
+                shift_b = suggestion.get('shift_b_semitones', 0) or 0
+            except Exception:
+                shift_a = shift_b = 0
+
         def _pitch_shift(y: np.ndarray, n_steps: float) -> np.ndarray:
             if abs(n_steps) < 0.01:
                 return y

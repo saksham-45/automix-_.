@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.smart_mixer import SmartMixer
 from src.song_analyzer import SongAnalyzer
-from scripts.inference import DJTransitionPredictor
+from scripts.training.inference import DJTransitionPredictor
 import numpy as np
 import soundfile as sf
 

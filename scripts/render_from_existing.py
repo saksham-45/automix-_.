@@ -17,7 +17,8 @@ from scripts.render_simple_mix import render_simple_transition
 def main():
     import argparse
     parser = argparse.ArgumentParser(description='Render mix from existing transition JSON')
-    parser.add_argument('--transition-json', default='youtube_transition.json',
+    parser.add_argument('--transition-json',
+                       default=str(Path(__file__).resolve().parent.parent / 'data' / 'fixtures' / 'youtube_transition.json'),
                        help='Path to transition prediction JSON')
     parser.add_argument('--url1', required=True, help='YouTube URL for song 1')
     parser.add_argument('--url2', required=True, help='YouTube URL for song 2')

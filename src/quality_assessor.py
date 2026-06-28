@@ -85,10 +85,12 @@ class QualityAssessor:
         # Spectral flux
         S = np.abs(librosa.stft(audio, n_fft=2048))
         flux = np.mean(np.diff(S, axis=1) ** 2)
-        
-        # Lower flux = smoother
-        # Normalize flux (0-1, higher = less smooth)
-        flux_normalized = min(1.0, flux / 1000)
+
+        # Lower flux = smoother. Normalize by the signal's own spectral energy so
+        # the score is amplitude-invariant. (Dividing by a hardcoded 1000 made
+        # flux_normalized ~0 for normalized audio, so smoothness was ~1.0 always.)
+        spec_energy = np.mean(S ** 2) + 1e-10
+        flux_normalized = min(1.0, flux / spec_energy)
         smoothness_score = 1.0 - flux_normalized
         
         # Also check for clicks/pops (sudden amplitude changes)
@@ -124,8 +126,10 @@ class QualityAssessor:
         # Spectral clarity (how clear are individual frequencies)
         import librosa
         spectral_contrast = librosa.feature.spectral_contrast(y=transition, sr=self.sr)
-        contrast_score = np.mean(spectral_contrast) / 1000  # Normalize
-        contrast_score = min(1.0, contrast_score)
+        # spectral_contrast is in dB (typical mean ~8-25). Dividing by 1000 pinned
+        # this to ~0, making 40% of the clarity score a dead constant. Normalize
+        # against a realistic dB span instead.
+        contrast_score = float(np.clip(np.mean(spectral_contrast) / 40.0, 0.0, 1.0))
         
         # Combined clarity
         score = (clarity_from_clash * 0.6 + contrast_score * 0.4)

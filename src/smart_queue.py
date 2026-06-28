@@ -54,6 +54,7 @@ class SmartQueue:
             
             # BPM
             tempo, _ = librosa.beat.beat_track(y=y, sr=self.sr)
+            tempo = float(np.atleast_1d(tempo)[0])  # librosa>=0.10 returns array
             # Handle both array and scalar tempo from different librosa versions
             bpm = float(tempo[0]) if isinstance(tempo, (np.ndarray, list)) else float(tempo)
             
@@ -88,21 +89,32 @@ class SmartQueue:
     def score_compatibility(self, meta_a: Dict, meta_b: Dict) -> float:
         """Scores compatibility between two tracks (0 to 1)."""
         # 1. BPM Score (closer is better, within 8% range)
-        bpm_diff = abs(meta_a['bpm'] - meta_b['bpm'])
-        bpm_score = max(0, 1.0 - (bpm_diff / (meta_a['bpm'] * 0.08)))
-        
+        bpm_a = float(meta_a.get('bpm', 0) or 0)
+        bpm_b = float(meta_b.get('bpm', 0) or 0)
+        bpm_diff = abs(bpm_a - bpm_b)
+        # Guard against bpm==0 (silent/short previews) -> ZeroDivisionError.
+        denom = max(bpm_a * 0.08, 1e-6)
+        bpm_score = max(0.0, 1.0 - (bpm_diff / denom))
+
         # 2. Key Score (Camelot Wheel logic)
-        key_a = meta_a['key']
-        key_b = meta_b['key']
-        
-        num_a = int(key_a[:-1])
-        mode_a = key_a[-1]
-        num_b = int(key_b[:-1])
-        mode_b = key_b[-1]
-        
+        key_a = str(meta_a.get('key', '') or '')
+        key_b = str(meta_b.get('key', '') or '')
+
+        def _parse_camelot(k):
+            # Expect e.g. '8A'/'12B'; tolerate junk.
+            try:
+                return int(k[:-1]), k[-1]
+            except (ValueError, IndexError):
+                return None, None
+
+        num_a, mode_a = _parse_camelot(key_a)
+        num_b, mode_b = _parse_camelot(key_b)
+
         # Harmonic keys: same, +/- 1, or relative major/minor
         key_score = 0.0
-        if key_a == key_b:
+        if num_a is None or num_b is None:
+            key_score = 0.2  # unknown key -> neutral-low
+        elif key_a == key_b:
             key_score = 1.0
         elif mode_a == mode_b and abs(num_a - num_b) % 12 == 1:
             key_score = 0.8
@@ -112,7 +124,7 @@ class SmartQueue:
             key_score = 0.2
             
         # 3. Energy Flow (prefer similar or slightly increasing)
-        energy_score = 1.0 - abs(meta_a['energy'] - meta_b['energy'])
+        energy_score = 1.0 - abs(float(meta_a.get('energy', 0.5)) - float(meta_b.get('energy', 0.5)))
         
         return (bpm_score * 0.4) + (key_score * 0.4) + (energy_score * 0.2)
 

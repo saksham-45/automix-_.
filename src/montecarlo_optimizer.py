@@ -25,9 +25,14 @@ class MonteCarloQualityOptimizer:
     we simulate many variations and pick the best one.
     """
     
-    def __init__(self, sr: int = 44100):
+    def __init__(self, sr: int = 44100, seed: int = 1234):
         self.sr = sr
-        
+        # Dedicated RNG so quality simulation / variation sampling is REPRODUCIBLE
+        # run-to-run (the optimizer previously used the global `random`, so its
+        # "best of N" picks were non-deterministic). Uses its own instance so it
+        # does not disturb the engine-level technique diversity (global random).
+        self._rng = random.Random(seed)
+
         # Quality dimensions and their weights
         self.quality_weights = {
             'smoothness': 0.25,
@@ -157,15 +162,15 @@ class MonteCarloQualityOptimizer:
                         high = value * 1.3
                     
                     # Sample from range
-                    varied[key] = random.uniform(low, high)
-                    
+                    varied[key] = self._rng.uniform(low, high)
+
                     # Keep as int if original was int
                     if isinstance(value, int):
                         varied[key] = int(varied[key])
-                
+
                 elif isinstance(value, bool):
                     # Flip with small probability
-                    if random.random() < 0.2:
+                    if self._rng.random() < 0.2:
                         varied[key] = not value
             
             variations.append(varied)
@@ -442,7 +447,9 @@ class MonteCarloQualityOptimizer:
             try:
                 result = self.simulate_transitions(
                     seg_a, seg_b, technique, base_params,
-                    n_simulations=n_iterations // len(techniques)
+                    # Guard: avoid 0 sims (more techniques than iterations) and
+                    # ZeroDivisionError on an empty technique list.
+                    n_simulations=max(1, n_iterations // max(1, len(techniques)))
                 )
                 result['technique'] = technique
                 all_results.append(result)

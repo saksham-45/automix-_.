@@ -171,6 +171,7 @@ class DeepTransitionAnalyzer:
         # 1. BEAT AND TIMING ANALYSIS
         print("  Analyzing beat alignment...")
         tempo, beats = librosa.beat.beat_track(y=segment, sr=sr, hop_length=self.hop_length)
+        tempo = float(np.atleast_1d(tempo)[0])  # librosa>=0.10 returns array
         beat_times = librosa.frames_to_time(beats, sr=sr, hop_length=self.hop_length)
         
         # Find beats around transition point

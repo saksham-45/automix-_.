@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Club AutoMixer</title>
+<style>
+  :root { --bg:#0b0c10; --panel:#15171f; --accent:#7c5cff; --accent2:#22d3ee; --txt:#e8e8ee; --mut:#8b8fa3; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:radial-gradient(1200px 600px at 50% -10%, #1a1030, var(--bg)); color:var(--txt);
+         font:15px/1.5 -apple-system,system-ui,Segoe UI,Roboto,sans-serif; min-height:100vh; }
+  .wrap { max-width:760px; margin:0 auto; padding:40px 20px 80px; }
+  h1 { font-size:26px; font-weight:700; letter-spacing:-.02em; margin:0 0 4px; }
+  .sub { color:var(--mut); margin:0 0 28px; }
+  .panel { background:var(--panel); border:1px solid #23262f; border-radius:16px; padding:20px; margin-bottom:18px; }
+  label { display:block; font-size:13px; color:var(--mut); margin:0 0 6px; }
+  input[type=text] { width:100%; padding:12px 14px; background:#0e0f15; border:1px solid #2a2d39; border-radius:10px;
+                     color:var(--txt); font-size:14px; }
+  .row { display:flex; gap:10px; align-items:center; margin-top:14px; flex-wrap:wrap; }
+  button { background:linear-gradient(135deg,var(--accent),#5b3fe0); color:#fff; border:0; padding:12px 18px;
+           border-radius:10px; font-size:14px; font-weight:600; cursor:pointer; }
+  button.ghost { background:#222533; }
+  button:disabled { opacity:.5; cursor:default; }
+  .bars { display:flex; align-items:center; gap:8px; color:var(--mut); font-size:13px; }
+  .bars input[type=range] { width:120px; }
+  #status { margin-top:14px; font-size:14px; color:var(--accent2); min-height:20px; }
+  .pbar { height:8px; background:#0e0f15; border-radius:6px; overflow:hidden; margin-top:14px; border:1px solid #2a2d39; }
+  .pbar > div { height:100%; width:0; background:linear-gradient(90deg,var(--accent2),var(--accent)); transition:width .2s; }
+  .timeline { display:flex; height:34px; border-radius:8px; overflow:hidden; margin-top:14px; border:1px solid #2a2d39; }
+  .seg { display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; white-space:nowrap; overflow:hidden; }
+  .seg.track { background:#3a3f55; color:#cfd3e6; }
+  .seg.transition { background:linear-gradient(135deg,var(--accent2),var(--accent)); color:#0b0c10; }
+  .nowplaying { margin-top:10px; font-size:14px; } .nowplaying b { color:var(--accent2); }
+  .legend { color:var(--mut); font-size:12px; margin-top:8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎛️ Club AutoMixer</h1>
+  <p class="sub">Paste a YouTube playlist — get one continuous, beat-matched, gapless club mix that starts instantly.</p>
+
+  <div class="panel">
+    <label>YouTube playlist (or single video) URL</label>
+    <input id="url" type="text" placeholder="https://www.youtube.com/playlist?list=..."/>
+    <div class="row">
+      <div class="bars">Blend
+        <input id="bars" type="range" min="8" max="32" step="8" value="16"/>
+        <span id="barsval">16</span> bars</div>
+      <label class="bars" style="margin:0"><input id="stems" type="checkbox" checked/> demucs stems</label>
+      <button id="go">Mix &amp; Play</button>
+      <button id="sample" class="ghost">Try sample</button>
+      <button id="stop" class="ghost" style="display:none">Stop</button>
+    </div>
+    <div id="status"></div>
+  </div>
+
+  <div class="panel" id="player" style="display:none">
+    <div class="pbar"><div id="fill"></div></div>
+    <div class="nowplaying" id="now"></div>
+    <div class="timeline" id="timeline"></div>
+    <div class="legend">grey = track • gradient = beat-matched transition (hover for type)</div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+$("#bars").oninput = e => $("#barsval").textContent = e.target.value;
+
+let ctx, gain, sid, playing = false;
+let nextIdx = 0, nextTime = 0, t0 = 0, chunkSec = 4, statusInfo = {};
+
+async function start(body) {
+  stopAll();
+  $("#player").style.display = "none";
+  $("#status").textContent = "starting…";
+  $("#go").disabled = $("#sample").disabled = true;
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  gain = ctx.createGain(); gain.gain.value = 1.0; gain.connect(ctx.destination);
+  try {
+    const r = await fetch("/api/set/start", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+    sid = j.session_id; nextIdx = 0; nextTime = 0; playing = true;
+    $("#stop").style.display = "inline-block";
+    pollAndPump();
+  } catch (e) { fail(e.message); }
+}
+
+function fail(m){ $("#status").textContent = "✗ " + m; $("#go").disabled=$("#sample").disabled=false; $("#stop").style.display="none"; }
+function stopAll(){ playing=false; if(ctx){ try{ctx.close();}catch(_){} ctx=null; } }
+$("#stop").onclick = () => { stopAll(); $("#status").textContent="⏹ stopped"; $("#go").disabled=$("#sample").disabled=false; $("#stop").style.display="none"; };
+
+async function getStatus(){ const r = await fetch("/api/set/"+sid); return r.json(); }
+
+async function pollAndPump(){
+  if(!playing) return;
+  try { statusInfo = await getStatus(); } catch(_){}
+  chunkSec = statusInfo.chunk_sec || 4;
+  if (statusInfo.status === "error") return fail(statusInfo.error || "render failed");
+
+  if (!$("#player").style.display || $("#player").style.display === "none") {
+    if ((statusInfo.chunks_ready||0) >= 1) { $("#player").style.display = "block"; }
+  }
+  const ready = statusInfo.chunks_ready || 0;
+  const total = statusInfo.chunk_count;            // null until finished
+  $("#status").textContent = statusInfo.status === "ready"
+    ? `▶ playing full set — ${statusInfo.n_tracks} tracks`
+    : "⏳ " + statusInfo.status + " (rendering ahead…)";
+
+  // schedule any available chunks, keeping ~8s buffered ahead
+  while (playing && nextIdx < ready && nextTime < ctx.currentTime + 8) {
+    try {
+      const ab = await (await fetch(`/api/set/${sid}/chunk/${nextIdx}`)).arrayBuffer();
+      const buf = await ctx.decodeAudioData(ab);
+      const src = ctx.createBufferSource(); src.buffer = buf; src.connect(gain);
+      if (nextTime < ctx.currentTime) nextTime = ctx.currentTime + 0.12; // first chunk / underrun
+      if (nextIdx === 0) t0 = nextTime;
+      src.start(nextTime);
+      nextTime += buf.duration;
+      nextIdx++;
+    } catch (e) { break; }
+  }
+
+  // progress + now-playing
+  if (ctx && t0 > 0) {
+    const elapsed = Math.max(0, ctx.currentTime - t0);
+    if (total) $("#fill").style.width = Math.min(100, 100*elapsed/(total*chunkSec)) + "%";
+    updateNow(elapsed);
+  }
+  if (statusInfo.status === "ready" && statusInfo.markers && !$("#timeline").dataset.built) buildTimeline(statusInfo);
+
+  const finished = total != null && nextIdx >= total;
+  if (finished) { $("#status").textContent = "✓ set complete"; $("#stop").style.display="none"; $("#go").disabled=$("#sample").disabled=false; return; }
+  setTimeout(pollAndPump, 250);
+}
+
+function buildTimeline(j){
+  const tl = $("#timeline"); tl.innerHTML = ""; tl.dataset.built = "1";
+  const dur = j.markers[j.markers.length-1].end_sec || 1;
+  j.markers.forEach(m => {
+    const d = document.createElement("div");
+    d.className = "seg " + m.type;
+    d.style.width = Math.max(0,(m.end_sec-m.start_sec)/dur*100) + "%";
+    d.title = m.type==="transition" ? `transition (${m.transition_type})` : `track ${m.index+1}`;
+    d.textContent = m.type==="transition" ? "↔" : ("T"+(m.index+1));
+    tl.appendChild(d);
+  });
+}
+function updateNow(elapsed){
+  const m = (statusInfo.markers||[]).find(m => elapsed>=m.start_sec && elapsed<m.end_sec);
+  if (m) $("#now").innerHTML = m.type==="transition"
+      ? `🔀 <b>transition</b> (${m.transition_type}) — track ${m.from+1} → ${m.to+1}`
+      : `▶️ <b>track ${m.index+1}</b>`;
+  else $("#now").innerHTML = `▶️ playing… (${elapsed.toFixed(0)}s)`;
+}
+
+$("#go").onclick = () => {
+  const url = $("#url").value.trim();
+  if (!url) { $("#status").textContent = "enter a playlist URL (or Try sample)"; return; }
+  start({url, blend_bars:+$("#bars").value, use_stems:$("#stems").checked});
+};
+$("#sample").onclick = () => start({files:["__SAMPLE__"], blend_bars:+$("#bars").value, use_stems:$("#stems").checked});
+</script>
+</body>
+</html>

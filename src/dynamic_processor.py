@@ -100,7 +100,7 @@ class DynamicProcessor:
             energy_b = np.mean(S_b[band_mask, :] ** 2)
             
             # Clash score (normalized)
-            clash = (energy_a * energy_b) / (np.max(energy_a, energy_b) + 1e-10)
+            clash = (energy_a * energy_b) / (np.maximum(energy_a, energy_b) + 1e-10)
             band_clashes[band_name] = float(clash)
         
         return band_clashes
@@ -126,16 +126,25 @@ class DynamicProcessor:
         # Design filter
         # Use shelf filters for smooth transitions
         nyquist = self.sr / 2
-        
+
+        # Normalized cutoffs must satisfy 0 < Wn < 1. Band edges go up to 20 kHz,
+        # so for any sr <= 40 kHz an unclamped cutoff would be >= Nyquist and scipy
+        # would raise. Clamp to a safe range.
+        def _wn(hz):
+            return min(max(hz / nyquist, 1e-4), 0.999)
+
         if band == 'bass':
             # Low shelf
-            sos = signal.iirfilter(4, low / nyquist, btype='high', output='sos')
+            sos = signal.iirfilter(4, _wn(low), btype='high', output='sos')
         elif band == 'high':
             # High shelf
-            sos = signal.iirfilter(4, high / nyquist, btype='low', output='sos')
+            sos = signal.iirfilter(4, _wn(high), btype='low', output='sos')
         else:
             # Bandpass for mid
-            sos = signal.iirfilter(4, [low / nyquist, high / nyquist], btype='band', output='sos')
+            lo_wn, hi_wn = _wn(low), _wn(high)
+            if hi_wn <= lo_wn:
+                hi_wn = min(lo_wn + 1e-3, 0.999)
+            sos = signal.iirfilter(4, [lo_wn, hi_wn], btype='band', output='sos')
         
         # Apply filter
         y_filtered = signal.sosfilt(sos, y)
@@ -147,17 +156,16 @@ class DynamicProcessor:
         else:
             gain = eq_curve
         
-        # Convert gain (0-1) to dB
-        gain_db = 20 * np.log10(gain + 1e-10)
-        
-        # Apply gain
-        y_processed = y.copy()
+        # gain (0-1) = how much of the band to KEEP.
         if y.ndim > 1:
             gain = gain[:, np.newaxis]
-        
-        # Mix original and filtered
-        y_processed = y * (1 - gain) + y_filtered * gain
-        
+
+        # band_component = the band being controlled (= y - bandstop result).
+        # gain=1 -> keep band fully (y); gain=0 -> band removed (y_filtered).
+        # The old mix (y*(1-gain) + y_filtered*gain) was inverted, and the dB
+        # conversion was computed and discarded.
+        y_processed = y * gain + y_filtered * (1 - gain)
+
         return y_processed
     
     def create_bass_swap_automation(self,
@@ -237,7 +245,11 @@ class DynamicProcessor:
         y_a_processed = y_a_processed - y_a_bass * (1 - bass_gain_a)  # Remove bass
         
         y_b_processed = y_b[:n_samples].copy()
-        y_b_processed = y_b_processed - y_b_bass * (1 - bass_gain_b) + y_b_bass * bass_gain_b  # Add bass
+        # Scale the incoming bass band to bass_gain_b. The old form
+        #   y_b - y_b_bass*(1-g) + y_b_bass*g  ==  y_b + (2g-1)*y_b_bass
+        # DOUBLED the bass at g=1 (+6 dB) and did nothing at g=0.5. Match the
+        # outgoing-side formula so g is a true band gain.
+        y_b_processed = y_b_processed - y_b_bass * (1 - bass_gain_b)  # Restore bass to gain
         
         return y_a_processed, y_b_processed
     

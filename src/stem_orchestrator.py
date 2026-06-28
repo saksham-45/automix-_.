@@ -208,9 +208,12 @@ class StemOrchestrator:
                 
                 phrase_idx += 1
             
-            # Smooth transitions
-            curve_a = gaussian_filter1d(curve_a, sigma=int(0.1 * self.sr))
-            curve_b = gaussian_filter1d(curve_b, sigma=int(0.1 * self.sr))
+            # Smooth transitions. 100ms sigma (0.1*sr) blurred the 1.0<->0.15 phrase
+            # edges across ~±300ms, bleeding phrases into each other; ~15ms de-clicks
+            # without destroying the phrase boundaries.
+            _sig = int(0.015 * self.sr)
+            curve_a = gaussian_filter1d(curve_a, sigma=_sig)
+            curve_b = gaussian_filter1d(curve_b, sigma=_sig)
             
             curves[stem] = {
                 'a': curve_a.tolist(),
@@ -1042,17 +1045,6 @@ class StemOrchestrator:
             Mixed audio
         """
         curves = conversation.get('curves', {})
-        #region agent log
-        import json, os, time
-        _log_path = '/Users/saksham/automix-_./.cursor/debug.log'
-        _log_dir = os.path.dirname(_log_path)
-        if not os.path.exists(_log_dir):
-            os.makedirs(_log_dir, exist_ok=True)
-        def _dbg(msg, data):
-            with open(_log_path, 'a') as f:
-                f.write(json.dumps({"location":"stem_orchestrator.orchestrate_mix","message":msg,"data":data,"timestamp":int(time.time()*1000),"sessionId":"debug-session","hypothesisId":"A"}) + '\n')
-        _dbg("orchestrate_mix entry", {"conv_type": conversation.get('type'), "curve_stems": list(curves.keys())})
-        #endregion
         
         # Get reference length
         ref_stem = next((s for s in stems_a.values() if len(s) > 0), None)
@@ -1139,10 +1131,6 @@ class StemOrchestrator:
             curve_spec = curves.get(stem_name, {})
             curve_a = np.array(curve_spec.get('a', [1.0] * n_samples))
             curve_b = np.array(curve_spec.get('b', [0.0] * n_samples))
-            #region agent log
-            q1 = min(int(n_samples * 0.1), len(curve_a) - 1)
-            _dbg("curves before role_plan", {"stem": stem_name, "curve_a_len": len(curve_a), "curve_a_first10pct_min": float(np.min(curve_a[:q1])) if q1 > 0 else 0, "curve_a_first10pct_max": float(np.max(curve_a[:q1])) if q1 > 0 else 0, "curve_a_mean": float(np.mean(curve_a))})
-            #endregion
             
             # Interpolate curves to match audio length
             if len(curve_a) != n_samples:
@@ -1175,9 +1163,6 @@ class StemOrchestrator:
             
             # Apply vocal/bed role plan if provided (skip for vocal_overlay_handoff; curves are explicit)
             conv_type = conversation.get('type', '')
-            #region agent log
-            _dbg("role_plan check", {"has_role_plan": role_plan is not None, "bed_src": role_plan.get('bed_source') if role_plan else None, "vocal_src": role_plan.get('vocal_source') if role_plan else None, "stem": stem_name})
-            #endregion
             if role_plan is not None and conv_type != 'vocal_overlay_handoff':
                 bed_src = role_plan.get('bed_source', 'a')
                 vocal_src = role_plan.get('vocal_source', 'a')
@@ -1202,10 +1187,14 @@ class StemOrchestrator:
                     elif bed_src == 'b':
                         curve_a *= 0.3
 
-            # Mix at level: equal-power curves so combined level stays constant (no dip)
+            # Mix at level: equal-power normalize ONLY where both sources are
+            # genuinely active (the crossfade overlap). Normalizing everywhere
+            # boosted a lone curve up to 1.0, erasing intentional ducks (e.g. the
+            # 0.15 call-response bed) and role-plan mutes (curve=0 -> 1.0).
             if mix_at_level:
                 power = np.sqrt(np.square(curve_a) + np.square(curve_b) + 1e-12)
-                scale = np.where(power > 1e-8, 1.0 / power, 1.0)
+                both_active = (curve_a > 0.05) & (curve_b > 0.05)
+                scale = np.where(both_active & (power > 1e-8), 1.0 / power, 1.0)
                 curve_a = curve_a * scale
                 curve_b = curve_b * scale
 
@@ -1243,11 +1232,6 @@ class StemOrchestrator:
             
             mixed[:samples] += contribution_a + contribution_b
         
-        #region agent log
-        q1 = min(int(n_samples * 0.25), len(mixed))
-        rms_q1 = float(np.sqrt(np.mean(mixed[:q1] ** 2))) if q1 > 0 else 0
-        _dbg("mixed output", {"n_samples": n_samples, "rms_first25pct": rms_q1, "max_abs": float(np.max(np.abs(mixed)))})
-        #endregion
         
         # --- 3. Tame distortion/harshness: reduce crossfade gain where loud transients overlap ---
         try:

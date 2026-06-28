@@ -124,6 +124,7 @@ class TransitionDetector:
         tempo, beat_frames = librosa.beat.beat_track(
             y=y, sr=sr, hop_length=self.hop_length
         )
+        tempo = float(np.atleast_1d(tempo)[0])  # librosa>=0.10 returns array
         
         beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=self.hop_length)
         beat_samples = librosa.frames_to_samples(beat_frames, hop_length=self.hop_length)
@@ -217,9 +218,18 @@ class TransitionDetector:
                     # Compare combined features
                     current = bar.features['combined']
                     previous = bars[i - lookback].features['combined']
-                    
-                    # Cosine distance (0 = identical, 1 = completely different)
-                    dist = cosine(current, previous)
+
+                    # Cosine distance (0 = identical, 1 = completely different).
+                    # scipy cosine returns NaN when either vector is all-zero (a
+                    # silent bar), which poisons max()/normalization downstream and
+                    # can wipe out all transition detection. Treat zero-energy as
+                    # "no change".
+                    if np.linalg.norm(current) < 1e-8 or np.linalg.norm(previous) < 1e-8:
+                        dist = 0.0
+                    else:
+                        dist = float(cosine(current, previous))
+                        if np.isnan(dist):
+                            dist = 0.0
                     dissimilarities.append(dist)
             
             if dissimilarities:
@@ -611,6 +621,7 @@ class TransitionDetector:
             sr=sr,
             hop_length=self.hop_length
         )
+        tempo = float(np.atleast_1d(tempo)[0])  # librosa>=0.10 returns array
         
         beat_times = librosa.frames_to_time(beats, sr=sr, hop_length=self.hop_length)
         

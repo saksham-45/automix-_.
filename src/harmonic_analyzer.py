@@ -60,7 +60,11 @@ class HarmonicAnalyzer:
         
         # Key names
         keys_major = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-        keys_minor = ['Am', 'A#m', 'Bm', 'Cm', 'C#m', 'Dm', 'D#m', 'Em', 'Fm', 'F#m', 'Gm', 'G#m']
+        # Indexed by root pitch-class (0=C). np.roll(minor_template, i) roots the
+        # template at pitch-class i, so the label at index i must be the key rooted
+        # at pitch-class i. (Previous list started at Am -> every minor key was
+        # mislabeled by +3 semitones.)
+        keys_minor = ['Cm', 'C#m', 'Dm', 'D#m', 'Em', 'Fm', 'F#m', 'Gm', 'G#m', 'Am', 'A#m', 'Bm']
         
         # Template matching for major and minor
         # Major: Ionian mode template
@@ -274,10 +278,14 @@ class HarmonicAnalyzer:
         Returns:
             Dict with chord analysis
         """
-        # Chroma for chord detection
-        chroma = librosa.feature.chroma_cqt(y=y, sr=self.sr)
-        hop_length = self.sr // 4  # 0.25s hops
-        
+        # Chroma for chord detection.
+        # NOTE: chroma_cqt's hop must be a power-of-two multiple, so we use its
+        # default (512) and convert frames->time with the SAME hop. Previously the
+        # time axis used sr//4 (11025) while chroma used 512, making every chord
+        # change / harmonic-rhythm time ~21.5x too large.
+        hop_length = 512  # chroma_cqt default hop
+        chroma = librosa.feature.chroma_cqt(y=y, sr=self.sr, hop_length=hop_length)
+
         # Time axis
         times = librosa.frames_to_time(np.arange(chroma.shape[1]), sr=self.sr, hop_length=hop_length)
         

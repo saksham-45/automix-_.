@@ -65,3 +65,12 @@ tmp/
 temp/
 *.tmp
 
+
+.venv/
+data/cache/
+set_*.wav
+club_blend*.wav
+
+*.part
+
+.claude/

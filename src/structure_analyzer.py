@@ -53,13 +53,7 @@ class StructureAnalyzer:
             Dict with phrases, sections, and energy analysis
         """
         import time, json
-        log_path = '/Users/saksham/untitled folder 7/.cursor/debug.log'
         
-        #region agent log
-        struct_start = time.time()
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"structure_analyzer.py:47","message":"Starting structure analysis","data":{"audio_len":len(y),"duration_sec":len(y)/self.sr},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
         
         # CRITICAL: Limit to 60 seconds max to prevent hanging on long files
         max_duration_sec = 60
@@ -67,67 +61,38 @@ class StructureAnalyzer:
         if len(y) > max_samples:
             # Use first portion for structure analysis
             y = y[:max_samples]
-            #region agent log
-            with open(log_path, 'a') as f:
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"structure_analyzer.py:62","message":"Truncated audio for speed","data":{"original_len":len(y)+max_samples,"truncated_len":len(y)},"timestamp":int(time.time()*1000)}) + '\n')
-            #endregion
         
         # Detect tempo and beats first
         beat_start = time.time()
         tempo, beats = librosa.beat.beat_track(y=y, sr=self.sr, hop_length=self.hop_length)
+        tempo = float(np.atleast_1d(tempo)[0])  # librosa>=0.10 returns array
         
-        #region agent log
-        beat_time = time.time() - beat_start
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"structure_analyzer.py:54","message":"Beat tracking complete","data":{"time_sec":beat_time,"num_beats":len(beats)},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
         beat_times = librosa.frames_to_time(beats, sr=self.sr, hop_length=self.hop_length)
         
         # Detect downbeats (bar boundaries)
         downbeat_start = time.time()
         downbeats = self._detect_downbeats(y, beat_times, tempo)
         
-        #region agent log
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"structure_analyzer.py:62","message":"Downbeat detection complete","data":{"time_sec":time.time()-downbeat_start},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
         
         # Detect phrases (typically 8 or 16 bars)
         phrase_start = time.time()
         phrases = self._detect_phrases(y, downbeats, tempo)
         
-        #region agent log
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"structure_analyzer.py:68","message":"Phrase detection complete","data":{"time_sec":time.time()-phrase_start,"num_phrases":len(phrases)},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
         
         # Detect sections (intro, verse, chorus, etc.)
         section_start = time.time()
         sections = self._detect_sections(y, phrases, downbeats)
         
-        #region agent log
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"structure_analyzer.py:75","message":"Section detection complete","data":{"time_sec":time.time()-section_start,"num_sections":len(sections)},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
         
         # Energy contour
         energy_start = time.time()
         energy_contour = self._analyze_energy_contour(y, downbeats)
         
-        #region agent log
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"structure_analyzer.py:82","message":"Energy contour complete","data":{"time_sec":time.time()-energy_start},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
         
         # Groove analysis
         groove_start = time.time()
         groove = self._analyze_groove(y, beat_times, tempo)
         
-        #region agent log
-        struct_total = time.time() - struct_start
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"structure_analyzer.py:90","message":"Structure analysis complete","data":{"total_time_sec":struct_total,"groove_time_sec":time.time()-groove_start},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
         
         return {
             'tempo': float(tempo),

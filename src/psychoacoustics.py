@@ -167,35 +167,53 @@ class PsychoacousticAnalyzer:
         if len(y) > max_samples:
             y = y[:max_samples]
         
-        # ITU-R BS.1770 K-weighting filter
-        # Pre-filter: high-pass at 38Hz
-        # RLB filter: +4dB at 1.5kHz, -2dB at 8kHz
-        
-        # High-pass filter at 38Hz
-        if len(y) > 1024:  # Need enough samples for filter
-            sos_hp = signal.butter(2, 38, btype='high', fs=self.sr, output='sos')
-            y_hp = signal.sosfilt(sos_hp, y)
+        # ITU-R BS.1770 K-weighting: two cascaded biquads (high-shelf + RLB high-pass).
+        # Previously the K-weighting filter was *computed but never applied* (the
+        # reported value was an unweighted, HP-only mean-square -> not LUFS).
+        fs = float(self.sr)
+
+        def _biquad(x, b, a):
+            return signal.lfilter(b, a, x, axis=0)
+
+        # Stage 1: high-frequency shelving boost (~+4 dB above ~1.7 kHz)
+        f0 = 1681.974450955533
+        G = 3.999843853973347
+        Qs = 0.7071752369554196
+        K = np.tan(np.pi * f0 / fs)
+        Vh = 10.0 ** (G / 20.0)
+        Vb = Vh ** 0.4996667741545416
+        a0s = 1.0 + K / Qs + K * K
+        b_shelf = [(Vh + Vb * K / Qs + K * K) / a0s,
+                   2.0 * (K * K - Vh) / a0s,
+                   (Vh - Vb * K / Qs + K * K) / a0s]
+        a_shelf = [1.0,
+                   2.0 * (K * K - 1.0) / a0s,
+                   (1.0 - K / Qs + K * K) / a0s]
+
+        # Stage 2: RLB high-pass (~38 Hz)
+        f0h = 38.13547087602444
+        Qh = 0.5003270373238773
+        Kh = np.tan(np.pi * f0h / fs)
+        a0h = 1.0 + Kh / Qh + Kh * Kh
+        b_hp = [1.0, -2.0, 1.0]
+        a_hp = [1.0,
+                2.0 * (Kh * Kh - 1.0) / a0h,
+                (1.0 - Kh / Qh + Kh * Kh) / a0h]
+
+        if len(y) > 1024:
+            y_kw = _biquad(_biquad(y.astype(np.float64), b_shelf, a_shelf), b_hp, a_hp)
         else:
-            y_hp = y
-        
-        # K-weighting filter (simplified approximation)
-        # Boost around 1.5kHz, cut around 8kHz
-        # Using shelving filters as approximation
-        b, a = signal.iirfilter(4, [1500, 8000], btype='bandpass', fs=self.sr)
-        
-        # Channel weighting (if stereo)
-        if y.ndim > 1:
-            # Center channel (mono) weighted 1.0
-            # Side channels weighted 1.41 (√2)
-            if y.shape[1] == 2:
-                y_weighted = (y_hp[:, 0] + 1.41 * y_hp[:, 1]) / 2.41
-            else:
-                y_weighted = np.mean(y_hp, axis=1)
+            y_kw = y.astype(np.float64)
+
+        # BS.1770 sums the mean-square power of each channel (L,R weighted 1.0).
+        # Build a per-sample summed-power series so the LRA windowing below is consistent.
+        if y_kw.ndim > 1:
+            ms_series = np.sum(y_kw ** 2, axis=1)
         else:
-            y_weighted = y_hp
-        
+            ms_series = y_kw ** 2
+
         # Mean square calculation
-        mean_square = np.mean(y_weighted ** 2)
+        mean_square = float(np.mean(ms_series))
         
         # Convert to LUFS
         # LUFS = -0.691 + 10*log10(mean_square)
@@ -205,13 +223,13 @@ class PsychoacousticAnalyzer:
         # Loudness range (LRA) - variation in loudness
         # Use 3-second windows, compute 10th and 95th percentiles
         window_samples = 3 * self.sr
-        n_windows = len(y_weighted) // window_samples
-        
+        n_windows = len(ms_series) // window_samples
+
         window_lufs = []
         for i in range(n_windows):
             start = i * window_samples
             end = start + window_samples
-            window_ms = np.mean(y_weighted[start:end] ** 2)
+            window_ms = np.mean(ms_series[start:end])
             window_lufs_val = -0.691 + 10 * np.log10(window_ms + 1e-10)
             window_lufs.append(window_lufs_val)
         
@@ -267,7 +285,9 @@ class PsychoacousticAnalyzer:
             'spectral_centroid_hz': float(avg_centroid),
             'onset_rate_per_sec': float(onset_rate),
             'spectral_contrast': float(avg_contrast),
-            'foreground_prominence': float(avg_contrast / 1000)  # Normalized estimate
+            # contrast is in dB (~8-25); /1000 pinned this near 0. Normalize vs a
+            # realistic dB span.
+            'foreground_prominence': float(np.clip(avg_contrast / 40.0, 0.0, 1.0))
         }
     
     def predict_frequency_clash(self,
@@ -280,37 +300,18 @@ class PsychoacousticAnalyzer:
             Dict with clash prediction and recommendations
         """
         import time, json
-        log_path = '/Users/saksham/untitled folder 7/.cursor/debug.log'
         
-        #region agent log
-        clash_start = time.time()
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"psychoacoustics.py:186","message":"predict_frequency_clash start","data":{"y_a_len":len(y_a),"y_b_len":len(y_b)},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
         
         # Use samples if audio is too long (for speed) - already sampled in caller
         # No need to sample again here
         
-        #region agent log
-        mask_start = time.time()
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"psychoacoustics.py:197","message":"Starting masking analysis","data":{"y_a_len":len(y_a),"y_b_len":len(y_b)},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
         
         # Analyze masking for both signals
         mask_a = self.analyze_frequency_masking(y_a)
         
-        #region agent log
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"psychoacoustics.py:203","message":"Mask A complete","data":{"time_sec":time.time()-mask_start},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
         
         mask_b = self.analyze_frequency_masking(y_b)
         
-        #region agent log
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"psychoacoustics.py:207","message":"Mask B complete","data":{"time_sec":time.time()-mask_start},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
         
         # Calculate mutual masking
         S_a = np.abs(librosa.stft(y_a, n_fft=self.n_fft, hop_length=self.hop_length))
@@ -357,11 +358,6 @@ class PsychoacousticAnalyzer:
         if bass_clash > 0.4:
             recommendations.append('Bass frequencies clashing - perform bass swap')
         
-        #region agent log
-        clash_total = time.time() - clash_start
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"psychoacoustics.py:349","message":"predict_frequency_clash complete","data":{"total_time_sec":clash_total},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
         
         return {
             'clash_score': float(clash_score),  # 0-1, higher = more clash
