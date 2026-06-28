@@ -126,16 +126,25 @@ class DynamicProcessor:
         # Design filter
         # Use shelf filters for smooth transitions
         nyquist = self.sr / 2
-        
+
+        # Normalized cutoffs must satisfy 0 < Wn < 1. Band edges go up to 20 kHz,
+        # so for any sr <= 40 kHz an unclamped cutoff would be >= Nyquist and scipy
+        # would raise. Clamp to a safe range.
+        def _wn(hz):
+            return min(max(hz / nyquist, 1e-4), 0.999)
+
         if band == 'bass':
             # Low shelf
-            sos = signal.iirfilter(4, low / nyquist, btype='high', output='sos')
+            sos = signal.iirfilter(4, _wn(low), btype='high', output='sos')
         elif band == 'high':
             # High shelf
-            sos = signal.iirfilter(4, high / nyquist, btype='low', output='sos')
+            sos = signal.iirfilter(4, _wn(high), btype='low', output='sos')
         else:
             # Bandpass for mid
-            sos = signal.iirfilter(4, [low / nyquist, high / nyquist], btype='band', output='sos')
+            lo_wn, hi_wn = _wn(low), _wn(high)
+            if hi_wn <= lo_wn:
+                hi_wn = min(lo_wn + 1e-3, 0.999)
+            sos = signal.iirfilter(4, [lo_wn, hi_wn], btype='band', output='sos')
         
         # Apply filter
         y_filtered = signal.sosfilt(sos, y)

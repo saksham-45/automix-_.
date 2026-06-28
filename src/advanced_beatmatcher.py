@@ -40,8 +40,9 @@ class AdvancedBeatMatcher:
         beat_a_idx = self._find_nearest_beat_index(point_a_sec, beats_a)
         beat_b_idx = self._find_nearest_beat_index(point_b_sec, beats_b)
         
-        aligned_point_a = beats_a[beat_a_idx]
-        aligned_point_b = beats_b[beat_b_idx]
+        # Fall back to the raw points if no beats were detected (silence/short clip)
+        aligned_point_a = beats_a[beat_a_idx] if beat_a_idx >= 0 else point_a_sec
+        aligned_point_b = beats_b[beat_b_idx] if beat_b_idx >= 0 else point_b_sec
         
         # Zero-crossing alignment for phase precision
         aligned_point_a = self._align_zero_crossing(y_a, aligned_point_a)
@@ -94,7 +95,9 @@ class AdvancedBeatMatcher:
         return float(tempo), beat_times, downbeats
     
     def _find_nearest_beat_index(self, time_sec: float, beat_times: np.ndarray) -> int:
-        """Find index of nearest beat."""
+        """Find index of nearest beat. Returns -1 if no beats (e.g. silence)."""
+        if beat_times is None or len(beat_times) == 0:
+            return -1
         distances = np.abs(beat_times - time_sec)
         return int(np.argmin(distances))
     

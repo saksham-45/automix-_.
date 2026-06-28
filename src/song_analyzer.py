@@ -611,6 +611,10 @@ class SongAnalyzer:
         
         # Pad or trim to 32 bars (8 samples per bar = 256 samples)
         target_samples = 256
+        if not last_32_bars_energy:
+            # No energy samples fell in the lookback window (e.g. time near 0).
+            # Avoid IndexError on [-1] below; seed with a neutral value.
+            last_32_bars_energy = [0.0]
         if len(last_32_bars_energy) > target_samples:
             indices = np.linspace(0, len(last_32_bars_energy)-1, target_samples, dtype=int)
             last_32_bars_energy = [last_32_bars_energy[i] for i in indices]
