@@ -8,7 +8,8 @@ import time
 from pathlib import Path
 
 
-sys.path.insert(0, str(Path(__file__).parent))
+_ROOT = Path(__file__).resolve().parent.parent  # repo root (this file lives in legacy/)
+sys.path.insert(0, str(_ROOT))
 
 
 from src.smart_mixer import SmartMixer
@@ -26,7 +27,7 @@ mixer = SmartMixer()
 # Load AI transition data if available
 ai_data = None
 try:
-    with open('youtube_transition.json') as f:
+    with open(_ROOT / 'data' / 'fixtures' / 'youtube_transition.json') as f:
         trans = json.load(f)
         if 'curves' in trans:
             ai_data = trans

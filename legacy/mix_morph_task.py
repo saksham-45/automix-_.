@@ -4,8 +4,8 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-# Add src to path
-sys.path.append(str(Path.cwd()))
+# Add repo root to path (this file lives in legacy/)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.smart_mixer import SmartMixer
 

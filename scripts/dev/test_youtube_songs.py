@@ -11,9 +11,9 @@ from pathlib import Path
 import tempfile
 import shutil
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from scripts.inference import DJTransitionPredictor
+from scripts.training.inference import DJTransitionPredictor
 from src.song_analyzer import SongAnalyzer
 
 

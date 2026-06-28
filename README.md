@@ -856,14 +856,24 @@ ai-dj-mixing-system/
 │   ├── decision_nn.pt               # Decision network weights
 │   └── curve_lstm.pt                # Curve LSTM weights
 │
-├── docs/                             # Documentation
+├── club_server.py                    # Gapless playlist→mix web app (primary)
+├── create_mix_from_youtube.py        # Two-URL CLI mixer (superhuman engine)
+├── mix_server.py                     # Legacy superhuman streaming server
+├── legacy/                           # Archived/superseded entry scripts
+├── data/fixtures/                    # Transition JSON fixtures
+├── scripts/                          # Tools, grouped:
+│   ├── training/                     #   ML training/inference pipeline
+│   ├── analysis/                     #   song/mix analysis utilities
+│   └── dev/                          #   tests, debug, one-offs
+├── docs/                             # All documentation & plans
+│   ├── PROJECT_EXPLANATION.md        # Detailed project explanation
+│   ├── EXECUTIVE_SUMMARY.md          # Executive summary
+│   ├── HOW_TO_START.md               # Quick start guide
+│   ├── BOILER_ROOM_MIXING_PLAN.md    # Club-mixing research + plan
+│   ├── PRODUCTION_STREAMING_PLAN.md  # Streaming architecture
 │   └── dj_techniques_knowledge_base.md
 │
-├── requirements.txt                  # Python dependencies
-├── README.md                         # This file
-├── PROJECT_EXPLANATION.md            # Detailed project explanation
-├── EXECUTIVE_SUMMARY.md              # Executive summary
-└── HOW_TO_START.md                   # Quick start guide
+└── requirements.txt                  # Python dependencies
 ```
 
 ## Advanced Usage

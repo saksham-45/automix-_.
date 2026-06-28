@@ -8,7 +8,7 @@ import re
 import subprocess
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.youtube_pipeline import YouTubePipeline
 

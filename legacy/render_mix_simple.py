@@ -10,7 +10,8 @@ print("RENDERING AI DJ MIX")
 print("="*60)
 
 # Load transition
-with open('youtube_transition.json') as f:
+_ROOT = Path(__file__).resolve().parent.parent  # repo root (this file lives in legacy/)
+with open(_ROOT / 'data' / 'fixtures' / 'youtube_transition.json') as f:
     trans = json.load(f)
 
 curves = trans.get('curves', {})

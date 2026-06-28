@@ -12,7 +12,7 @@ from typing import Dict, List
 import uuid
 
 # Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.training_data_extractor import TrainingDataExtractor
 from src.database import MusicDatabase

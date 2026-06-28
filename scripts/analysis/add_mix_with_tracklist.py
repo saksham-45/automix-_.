@@ -16,7 +16,7 @@ from pathlib import Path
 from datetime import datetime
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 
 def parse_tracklist(text: str) -> list:

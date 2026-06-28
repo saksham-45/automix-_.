@@ -21,7 +21,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 
 # Add project root
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import torch
 import torch.nn as nn

@@ -12,9 +12,9 @@ import sys
 import argparse
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from scripts.inference import DJTransitionPredictor, visualize_curves
+from scripts.training.inference import DJTransitionPredictor, visualize_curves
 import json
 
 

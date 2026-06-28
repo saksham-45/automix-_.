@@ -70,3 +70,5 @@ temp/
 data/cache/
 set_*.wav
 club_blend*.wav
+
+*.part

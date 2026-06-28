@@ -18,7 +18,7 @@ from pathlib import Path
 from sklearn.metrics import confusion_matrix, classification_report, precision_recall_fscore_support
 from collections import defaultdict
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.models.decision_nn import DecisionNN, prepare_features, prepare_targets
 from torch.utils.data import Dataset, DataLoader

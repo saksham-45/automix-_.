@@ -13,7 +13,7 @@ import numpy as np
 from pathlib import Path
 from sklearn.model_selection import train_test_split
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 
 def load_validated_samples():
@@ -24,7 +24,7 @@ def load_validated_samples():
             return json.load(f)
     
     # Fallback: load directly
-    from scripts.validate_training_data import load_all_samples, validate_sample
+    from scripts.training.validate_training_data import load_all_samples, validate_sample
     samples = load_all_samples()
     valid_samples = [s for s in samples if validate_sample(s)[0]]
     return valid_samples

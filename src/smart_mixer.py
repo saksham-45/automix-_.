@@ -1057,7 +1057,7 @@ class SmartMixer:
             ai_data = None
             try:
                 config_root = Path(__file__).resolve().parent.parent
-                with open(config_root / "youtube_transition.json") as f:
+                with open(config_root / "data" / "fixtures" / "youtube_transition.json") as f:
                     trans = json.load(f)
                     if "curves" in trans:
                         ai_data = trans
@@ -1299,7 +1299,7 @@ class SmartMixer:
             ai_data = None
             try:
                 config_root = Path(__file__).resolve().parent.parent
-                with open(config_root / "youtube_transition.json") as f:
+                with open(config_root / "data" / "fixtures" / "youtube_transition.json") as f:
                     trans = json.load(f)
                     if "curves" in trans:
                         ai_data = trans

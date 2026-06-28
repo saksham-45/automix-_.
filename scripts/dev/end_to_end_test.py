@@ -16,7 +16,7 @@ import torch
 from pathlib import Path
 from typing import Dict, List
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.models.decision_nn import DecisionNN, prepare_features, prepare_targets
 from src.models.curve_lstm import CurveLSTM, prepare_curve_targets

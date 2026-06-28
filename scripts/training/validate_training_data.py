@@ -14,7 +14,7 @@ import numpy as np
 from pathlib import Path
 from collections import defaultdict
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.models.decision_nn import prepare_features, prepare_targets
 
