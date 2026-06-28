@@ -72,3 +72,5 @@ set_*.wav
 club_blend*.wav
 
 *.part
+
+.claude/
