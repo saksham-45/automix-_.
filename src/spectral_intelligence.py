@@ -577,33 +577,28 @@ class SpectralIntelligenceEngine:
         """
         # Convert to dB
         spectrum_db = 20 * np.log10(spectrum + 1e-10)
-        
-        # Create masking curve (spreading function)
-        threshold = np.zeros_like(spectrum)
-        
-        for i, (freq, level) in enumerate(zip(freqs, spectrum_db)):
-            if level < -60:
-                continue
-            
-            # Spreading function (simplified bark-scale)
-            for j, f in enumerate(freqs):
-                if f == 0:
-                    continue
-                
-                # Distance in critical bands (simplified)
-                distance = abs(np.log2(freq / f + 1e-10))
-                
-                # Masking spread
-                if distance < 1:  # Within one octave
-                    spread_db = level - 20 * distance
-                elif distance < 2:  # Within two octaves
-                    spread_db = level - 40 - 10 * (distance - 1)
-                else:
-                    spread_db = -100
-                
-                threshold[j] = max(threshold[j], 10 ** (spread_db / 20))
-        
-        return threshold
+
+        # Vectorized spreading function. Equivalent to the old O(n_bins^2) double
+        # Python loop: threshold[j] = max over source bins i (level >= -60dB) of
+        # the spread contribution, where distance = |log2(f_i / f_j)|.
+        freqs = np.asarray(freqs, dtype=np.float64)
+        level_i = spectrum_db[:, None]                      # (N, 1) source levels
+        with np.errstate(divide='ignore', invalid='ignore'):
+            dist = np.abs(np.log2(freqs[:, None] / freqs[None, :] + 1e-10))  # (N, N)
+
+        spread = np.full(dist.shape, -100.0)
+        m1 = dist < 1
+        m2 = (dist >= 1) & (dist < 2)
+        spread = np.where(m1, level_i - 20.0 * dist, spread)
+        spread = np.where(m2, level_i - 40.0 - 10.0 * (dist - 1.0), spread)
+        # Source bins below -60 dB don't mask (the old loop `continue`d them).
+        spread[spectrum_db < -60, :] = -np.inf
+
+        lin = np.power(10.0, spread / 20.0)
+        threshold = lin.max(axis=0)
+        threshold = np.maximum(threshold, 0.0)              # old init was zeros
+        threshold[freqs == 0] = 0.0                          # old loop skipped f==0 targets
+        return threshold.astype(spectrum.dtype)
     
     def _recommend_masking_action(self, masking_score: float) -> str:
         """Recommend action based on masking analysis."""
