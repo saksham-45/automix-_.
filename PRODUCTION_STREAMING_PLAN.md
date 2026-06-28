@@ -75,13 +75,15 @@ Net: a 16-bar overlap at 128 BPM ≈ 30 s of audio per side → demucs on MPS ha
 Your env: **Python 3.14 + torch 2.11.0 (nightly), MPS available, but `torchaudio` won't load** → demucs silently falls back, so you've effectively been mixing *without* stems. Fix = a clean, pinned, MPS-capable env:
 
 ```bash
-# isolated venv, do NOT touch system python
+# isolated venv, do NOT touch system python  (VERIFIED working: torch+torchaudio 2.2.2, MPS=True, demucs htdemucs loads & separates on MPS)
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install torch==2.2.2 torchaudio==2.2.2          # matched pair, arm64 wheels, MPS
 pip install -r requirements.txt
 pip install --no-deps 'git+https://github.com/adefossez/demucs.git'
+pip install dora-search einops julius openunmix     # demucs runtime deps (skipped by --no-deps; lameenc NOT needed, we don't encode mp3)
+pip install "setuptools<81"                          # librosa needs pkg_resources, removed in setuptools 81+
 ```
-(torch/torchaudio **must** be the same version. Python 3.12 has stable wheels; 3.14 does not yet for this stack.) After this, demucs runs on MPS and the cache + segment-only path make it fast.
+(torch/torchaudio **must** be the same version. Python 3.12 has stable wheels; 3.14 does not yet for this stack.) Run the app with `./.venv/bin/python club_server.py`. After this, demucs runs on MPS and the cache + segment-only path make it fast (measured: ~7.6 s for an 8 s segment first call, **0.012 s** cached).
 
 ---
 

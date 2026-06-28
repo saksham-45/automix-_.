@@ -211,6 +211,33 @@ def _equal_power(n: int) -> Tuple[np.ndarray, np.ndarray]:
     return np.sqrt(0.5 * (1 + np.cos(np.pi * t))), np.sqrt(0.5 * (1 - np.cos(np.pi * t)))
 
 
+def _fit_len(seg: np.ndarray, n: int) -> np.ndarray:
+    """Truncate or zero-pad a stereo segment to exactly n samples."""
+    if len(seg) >= n:
+        return seg[:n]
+    pad = np.zeros((n - len(seg), seg.shape[1]), dtype=seg.dtype)
+    return np.vstack([seg, pad])
+
+
+def _render_overlap(seg_a: np.ndarray, seg_b: np.ndarray, plan: "TransitionPlan", sr: int) -> np.ndarray:
+    """The 4-state blend over one overlap window: equal-power mids/highs crossfade
+    + beat-locked 3-band EQ bass swap on the t2 downbeat (constant low-end power).
+    seg_a/seg_b must already be the same length (= plan.overlap_samples)."""
+    N = len(seg_a)
+    bar_samp = int(round(plan.bar_dur * sr))
+    volA, volB = _equal_power(N)
+    low_a, mid_a, high_a = _band_split(seg_a, sr)
+    low_b, mid_b, high_b = _band_split(seg_b, sr)
+    s2 = int(round((plan.blend_bars / 2.0) * bar_samp))   # switch (t2)
+    sw = max(1, bar_samp)                                  # swap over ~1 bar, centered on t2
+    x = np.clip((np.arange(N) - (s2 - sw / 2)) / sw, 0.0, 1.0)
+    gA_low = np.sqrt(0.5 * (1 + np.cos(np.pi * x)))        # 1 -> 0
+    gB_low = np.sqrt(0.5 * (1 - np.cos(np.pi * x)))        # 0 -> 1 (equal power)
+    lows = _apply_gain(low_a, gA_low) + _apply_gain(low_b, gB_low)
+    mids_highs = _apply_gain(mid_a + high_a, volA) + _apply_gain(mid_b + high_b, volB)
+    return lows + mids_highs
+
+
 def _time_stretch(y_mono: np.ndarray, rate: float) -> np.ndarray:
     if abs(1.0 - rate) < 1e-3:
         return y_mono
@@ -281,33 +308,11 @@ def render_club_mix(y_a: np.ndarray,
     seg_a = ya_st[a_t1:a_t1 + N]
     b_in = int(round(plan.b_in_sec * sr))
     seg_b = yb_st[b_in:b_in + N]
-    # pad to equal length N
-    def _fit(seg):
-        if len(seg) >= N:
-            return seg[:N]
-        pad = np.zeros((N - len(seg), seg.shape[1]), dtype=seg.dtype)
-        return np.vstack([seg, pad])
-    seg_a, seg_b = _fit(seg_a), _fit(seg_b)
+    seg_a, seg_b = _fit_len(seg_a, N), _fit_len(seg_b, N)
 
-    # Loudness-match B to A across the overlap.
+    # Loudness-match B to A across the overlap, then render the 4-state blend.
     seg_b = _match_loudness(seg_a, seg_b, sr)
-
-    # --- Volume crossfade (equal-power) for the full-band envelope. ---
-    volA, volB = _equal_power(N)
-
-    # --- Beat-locked 3-band EQ bass swap (constant low-end power). ---
-    low_a, mid_a, high_a = _band_split(seg_a, sr)
-    low_b, mid_b, high_b = _band_split(seg_b, sr)
-
-    s2 = int(round((plan.blend_bars / 2.0) * bar_samp))   # switch sample (t2)
-    sw = max(1, bar_samp)                                  # swap over ~1 bar, centered on t2
-    x = np.clip((np.arange(N) - (s2 - sw / 2)) / sw, 0.0, 1.0)
-    gA_low = np.sqrt(0.5 * (1 + np.cos(np.pi * x)))        # 1 → 0 across the swap
-    gB_low = np.sqrt(0.5 * (1 - np.cos(np.pi * x)))        # 0 → 1 (equal power)
-
-    lows = _apply_gain(low_a, gA_low) + _apply_gain(low_b, gB_low)
-    mids_highs = _apply_gain(mid_a + high_a, volA) + _apply_gain(mid_b + high_b, volB)
-    overlap = lows + mids_highs
+    overlap = _render_overlap(seg_a, seg_b, plan, sr)
 
     # --- Context (lead-in from A, lead-out from B). ---
     ctx = int(round(context_bars * plan.bar_dur * sr))
@@ -348,3 +353,88 @@ def _splice(parts, sr: int, xf_sec: float = 0.05) -> np.ndarray:
         else:
             out = np.vstack([out, nxt])
     return out
+
+
+def build_continuous_set(tracks,
+                         sr: int = 44100,
+                         blend_bars: int = 16,
+                         phrase_bars: int = 8,
+                         progress=None) -> Tuple[np.ndarray, list]:
+    """Chain N tracks into ONE continuous, gapless, club-mixed timeline (a DJ set):
+
+        [track0 body → t1] [0→1 blend] [track1 body → t1] [1→2 blend] ... [last body]
+
+    Each consecutive pair is beat-/phrase-locked and bass-swapped via the same
+    research-grounded model as render_club_mix. `tracks` is a list of audio arrays
+    (mono or stereo). Returns (stereo_audio, markers) where markers describe each
+    track-body and transition span (sample offsets) for a gapless client / UI.
+
+    This is the engine behind "paste a playlist → one continuous mixed stream":
+    a transition never adds a gap because the whole set is a single timeline.
+    """
+    n = len(tracks)
+    if n == 0:
+        return np.zeros((0, 2), dtype=np.float32), []
+    cur = _as_stereo(np.asarray(tracks[0])).astype(np.float32)
+    if n == 1:
+        out = _headroom(cur).astype(np.float32)
+        return out, [{"type": "track", "index": 0, "start_sec": 0.0, "end_sec": len(out) / sr}]
+
+    timeline = []          # stereo parts to splice
+    markers = []
+    resume = 0.0           # seconds into `cur` where its audible body should begin
+    pos = 0.0              # running output position (seconds), approximate (pre-splice)
+
+    for i in range(n - 1):
+        nxt = _as_stereo(np.asarray(tracks[i + 1])).astype(np.float32)
+        grid_a = build_phrase_grid(cur, sr, phrase_bars=phrase_bars)
+        grid_b0 = build_phrase_grid(nxt, sr, phrase_bars=phrase_bars)
+
+        # Tempo-lock B to A (downbeat handoff stays on grid).
+        rate = _choose_tempo_rate(grid_a.tempo, grid_b0.tempo)
+        if abs(1.0 - rate) > 1e-3:
+            chans = [_time_stretch(nxt[:, c], rate) for c in range(nxt.shape[1])]
+            m = min(len(c) for c in chans)
+            nxt = np.column_stack([c[:m] for c in chans]).astype(np.float32)
+            grid_b = build_phrase_grid(nxt, sr, phrase_bars=phrase_bars)
+        else:
+            grid_b = grid_b0
+
+        plan = plan_transition(grid_a, grid_b, blend_bars=blend_bars)
+        N = plan.overlap_samples
+
+        # Body of current track: from its resume point up to t1.
+        r0 = int(round(resume * sr))
+        a_t1 = int(round(plan.a_t1_sec * sr))
+        body = cur[max(0, r0):max(r0, a_t1)]
+        timeline.append(body)
+        markers.append({"type": "track", "index": i,
+                        "start_sec": pos, "end_sec": pos + len(body) / sr})
+        pos += len(body) / sr
+
+        # Overlap blend (loudness-matched, bass-swapped, phrase-locked).
+        seg_a = _fit_len(cur[a_t1:a_t1 + N], N)
+        b_in = int(round(plan.b_in_sec * sr))
+        seg_b = _fit_len(nxt[b_in:b_in + N], N)
+        seg_b = _match_loudness(seg_a, seg_b, sr)
+        overlap = _render_overlap(seg_a, seg_b, plan, sr)
+        timeline.append(overlap)
+        markers.append({"type": "transition", "from": i, "to": i + 1,
+                        "transition_type": plan.transition_type,
+                        "start_sec": pos, "end_sec": pos + len(overlap) / sr})
+        pos += len(overlap) / sr
+
+        # Next track becomes current; it resumes just after the overlap.
+        cur = nxt
+        resume = plan.b_in_sec + plan.blend_bars * plan.bar_dur
+        if progress:
+            progress(i + 1, n)
+
+    # Tail: last track from its resume point to the end.
+    tail = cur[int(round(resume * sr)):]
+    timeline.append(tail)
+    markers.append({"type": "track", "index": n - 1,
+                    "start_sec": pos, "end_sec": pos + len(tail) / sr})
+
+    final = _headroom(_splice(timeline, sr)).astype(np.float32)
+    return final, markers

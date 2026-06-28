@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Club AutoMixer</title>
+<style>
+  :root { --bg:#0b0c10; --panel:#15171f; --accent:#7c5cff; --accent2:#22d3ee; --txt:#e8e8ee; --mut:#8b8fa3; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:radial-gradient(1200px 600px at 50% -10%, #1a1030, var(--bg)); color:var(--txt);
+         font:15px/1.5 -apple-system,system-ui,Segoe UI,Roboto,sans-serif; min-height:100vh; }
+  .wrap { max-width:760px; margin:0 auto; padding:40px 20px 80px; }
+  h1 { font-size:26px; font-weight:700; letter-spacing:-.02em; margin:0 0 4px; }
+  .sub { color:var(--mut); margin:0 0 28px; }
+  .panel { background:var(--panel); border:1px solid #23262f; border-radius:16px; padding:20px; margin-bottom:18px; }
+  label { display:block; font-size:13px; color:var(--mut); margin:0 0 6px; }
+  input[type=text] { width:100%; padding:12px 14px; background:#0e0f15; border:1px solid #2a2d39; border-radius:10px;
+                     color:var(--txt); font-size:14px; }
+  .row { display:flex; gap:10px; align-items:center; margin-top:14px; flex-wrap:wrap; }
+  button { background:linear-gradient(135deg,var(--accent),#5b3fe0); color:#fff; border:0; padding:12px 18px;
+           border-radius:10px; font-size:14px; font-weight:600; cursor:pointer; }
+  button.ghost { background:#222533; }
+  button:disabled { opacity:.5; cursor:default; }
+  .bars { display:flex; align-items:center; gap:8px; color:var(--mut); font-size:13px; }
+  .bars input { width:130px; }
+  #status { margin-top:14px; font-size:14px; color:var(--accent2); min-height:20px; }
+  audio { width:100%; margin-top:6px; }
+  .timeline { display:flex; height:34px; border-radius:8px; overflow:hidden; margin-top:14px; border:1px solid #2a2d39; }
+  .seg { display:flex; align-items:center; justify-content:center; font-size:11px; color:#0b0c10; font-weight:700;
+         white-space:nowrap; overflow:hidden; }
+  .seg.track { background:#3a3f55; color:#cfd3e6; }
+  .seg.transition { background:linear-gradient(135deg,var(--accent2),var(--accent)); }
+  .legend { color:var(--mut); font-size:12px; margin-top:8px; }
+  .nowplaying { margin-top:10px; font-size:14px; }
+  .nowplaying b { color:var(--accent2); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎛️ Club AutoMixer</h1>
+  <p class="sub">Paste a YouTube playlist — get one continuous, beat-matched, gapless club mix.</p>
+
+  <div class="panel">
+    <label>YouTube playlist (or single video) URL</label>
+    <input id="url" type="text" placeholder="https://www.youtube.com/playlist?list=..."/>
+    <div class="row">
+      <div class="bars">Blend
+        <input id="bars" type="range" min="8" max="32" step="8" value="16"/>
+        <span id="barsval">16</span> bars
+      </div>
+      <button id="go">Mix &amp; Play</button>
+      <button id="sample" class="ghost" title="Use bundled audio (no download)">Try sample</button>
+    </div>
+    <div id="status"></div>
+  </div>
+
+  <div class="panel" id="player" style="display:none">
+    <audio id="audio" controls></audio>
+    <div class="timeline" id="timeline"></div>
+    <div class="legend">grey = track &nbsp;•&nbsp; gradient = beat-matched transition (hover for type)</div>
+    <div class="nowplaying" id="now"></div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+$("#bars").oninput = e => $("#barsval").textContent = e.target.value;
+
+async function start(body) {
+  $("#player").style.display = "none";
+  $("#status").textContent = "starting…";
+  $("#go").disabled = $("#sample").disabled = true;
+  try {
+    const r = await fetch("/api/set/start", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+    poll(j.session_id);
+  } catch (e) { $("#status").textContent = "✗ " + e.message; $("#go").disabled=$("#sample").disabled=false; }
+}
+
+async function poll(sid) {
+  const r = await fetch("/api/set/" + sid);
+  const j = await r.json();
+  if (j.status === "ready") {
+    $("#status").textContent = `✓ Ready — ${j.n_tracks} tracks, ${Math.round(j.duration)}s continuous mix`;
+    $("#go").disabled = $("#sample").disabled = false;
+    showPlayer(j);
+  } else if (j.status === "error") {
+    $("#status").textContent = "✗ " + (j.error || "failed");
+    $("#go").disabled = $("#sample").disabled = false;
+  } else {
+    $("#status").textContent = "⏳ " + j.status + " …";
+    setTimeout(() => poll(sid), 1200);
+  }
+}
+
+function showPlayer(j) {
+  $("#player").style.display = "block";
+  const a = $("#audio"); a.src = j.audio_url; a.load();
+  const tl = $("#timeline"); tl.innerHTML = "";
+  const dur = j.duration || 1;
+  (j.markers || []).forEach(m => {
+    const w = Math.max(0, (m.end_sec - m.start_sec) / dur * 100);
+    const d = document.createElement("div");
+    d.className = "seg " + m.type;
+    d.style.width = w + "%";
+    d.title = m.type === "transition" ? `transition (${m.transition_type})` : `track ${m.index+1}`;
+    d.textContent = m.type === "transition" ? "↔" : ("T" + (m.index+1));
+    tl.appendChild(d);
+  });
+  // now-playing readout from the marker under the playhead
+  a.ontimeupdate = () => {
+    const t = a.currentTime;
+    const m = (j.markers || []).find(m => t >= m.start_sec && t < m.end_sec);
+    if (!m) return;
+    $("#now").innerHTML = m.type === "transition"
+      ? `🔀 <b>transition</b> (${m.transition_type}) — track ${m.from+1} → ${m.to+1}`
+      : `▶️ <b>track ${m.index+1}</b>`;
+  };
+  a.play().catch(()=>{});
+}
+
+$("#go").onclick = () => {
+  const url = $("#url").value.trim();
+  if (!url) { $("#status").textContent = "enter a playlist URL (or Try sample)"; return; }
+  start({url, blend_bars:+$("#bars").value});
+};
+$("#sample").onclick = () => start({files:["__SAMPLE__"], blend_bars:+$("#bars").value});
+</script>
+</body>
+</html>
