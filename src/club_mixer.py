@@ -495,7 +495,8 @@ def build_continuous_set(tracks,
                          blend_bars: int = 16,
                          phrase_bars: int = 8,
                          progress=None,
-                         use_stems: bool = False) -> Tuple[np.ndarray, list]:
+                         use_stems: bool = False,
+                         on_part=None) -> Tuple[np.ndarray, list]:
     """Chain N tracks into ONE continuous, gapless, club-mixed timeline (a DJ set):
 
         [track0 body → t1] [0→1 blend] [track1 body → t1] [1→2 blend] ... [last body]
@@ -508,12 +509,19 @@ def build_continuous_set(tracks,
     This is the engine behind "paste a playlist → one continuous mixed stream":
     a transition never adds a gap because the whole set is a single timeline.
     """
+    # on_part(part_audio) is called with each contiguous timeline piece as it is
+    # produced -> lets a server stream the set progressively (start playback on the
+    # first piece while the rest renders). The timeline is sample-contiguous, so
+    # parts concatenate gaplessly with no crossfade needed.
+    _emit = on_part or (lambda p: None)
+
     n = len(tracks)
     if n == 0:
         return np.zeros((0, 2), dtype=np.float32), []
     cur = _as_stereo(np.asarray(tracks[0])).astype(np.float32)
     if n == 1:
         out = _headroom(cur).astype(np.float32)
+        _emit(out)
         return out, [{"type": "track", "index": 0, "start_sec": 0.0, "end_sec": len(out) / sr}]
 
     timeline = []          # stereo parts to splice
@@ -543,7 +551,7 @@ def build_continuous_set(tracks,
         r0 = int(round(resume * sr))
         a_t1 = int(round(plan.a_t1_sec * sr))
         body = cur[max(0, r0):max(r0, a_t1)]
-        timeline.append(body)
+        timeline.append(body); _emit(body)
         markers.append({"type": "track", "index": i,
                         "start_sec": pos, "end_sec": pos + len(body) / sr})
         pos += len(body) / sr
@@ -554,7 +562,7 @@ def build_continuous_set(tracks,
         seg_b = _fit_len(nxt[b_in:b_in + N], N)
         seg_b = _match_loudness(seg_a, seg_b, sr)
         overlap = (_render_overlap_stems if use_stems else _render_overlap)(seg_a, seg_b, plan, sr)
-        timeline.append(overlap)
+        timeline.append(overlap); _emit(overlap)
         markers.append({"type": "transition", "from": i, "to": i + 1,
                         "transition_type": plan.transition_type,
                         "start_sec": pos, "end_sec": pos + len(overlap) / sr})
@@ -568,7 +576,7 @@ def build_continuous_set(tracks,
 
     # Tail: last track from its resume point to the end.
     tail = cur[int(round(resume * sr)):]
-    timeline.append(tail)
+    timeline.append(tail); _emit(tail)
     markers.append({"type": "track", "index": n - 1,
                     "start_sec": pos, "end_sec": pos + len(tail) / sr})
 

@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Club AutoMixer server (P2) — paste a YouTube playlist (or local files), get ONE
-continuous, gapless, Boiler-Room–style mixed set to listen to.
+Club AutoMixer server — paste a YouTube playlist (or use the bundled sample), get
+ONE continuous, gapless, Boiler-Room–style mixed set with TRUE no-delay start.
 
-Run (use the project venv that has matched torch/torchaudio + librosa):
+Run (use the project venv with matched torch/torchaudio + librosa + demucs):
     ./.venv/bin/python club_server.py
 Then open http://localhost:5005
 
-Design: the whole set is rendered as a SINGLE timeline by
-src.club_mixer.build_continuous_set, so playback is gapless by construction (no
-between-track delay — there are no track boundaries to gap). Progressive/
-look-ahead streaming while it builds is the next refinement (see
-PRODUCTION_STREAMING_PLAN.md, P3).
+Streaming model (P3): the mixed timeline is sample-contiguous by construction, so
+the producer emits it as fixed-size PCM chunks AS IT RENDERS (via build_continuous_set's
+on_part callback). The web client schedules chunks back-to-back with the Web Audio
+API and starts playback on chunk 0 — playback begins seconds in, while the rest of
+the set is still rendering ahead of the playhead. No upfront full-set wait.
 """
 import sys
 import uuid
@@ -22,32 +22,32 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 import librosa
-from flask import Flask, jsonify, request, send_file, Response, render_template
+from flask import Flask, jsonify, request, send_file, render_template
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
-from src.club_mixer import build_continuous_set  # noqa: E402
+from src.club_mixer import build_continuous_set, _as_stereo  # noqa: E402
 from src.settings import SR, CACHE_DIR, HOST, PORT, DOWNLOAD_TIMEOUT_SEC  # noqa: E402
 
 app = Flask(__name__, template_folder=str(ROOT / "templates"))
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+CHUNK_DIR = CACHE_DIR / "chunks"
 DL_DIR = CACHE_DIR / "tracks"
-DL_DIR.mkdir(parents=True, exist_ok=True)
+for d in (CHUNK_DIR, DL_DIR):
+    d.mkdir(parents=True, exist_ok=True)
 
 SESSIONS: dict = {}
-_PER_TRACK_CAP = 150  # seconds downloaded per track (bounds time; plenty for a blend)
-
-# Bundled demo tracks (file, start_sec) so "Try sample" works with no network.
+CHUNK_SEC = 4.0
+_PER_TRACK_CAP = 150
 _SAMPLE_SOURCES = [
     ("mixes/drake_weeknd_mix.wav", 50.0),
     ("mixes/goingbad_sunflower_mix.wav", 30.0),
     ("mixes/lookback_wakeup_mix.wav", 40.0),
 ]
-_SAMPLE_DUR = 40.0
+_SAMPLE_DUR = 45.0
 
 
 # --------------------------------------------------------------------------- #
-# helpers
+# track collection
 # --------------------------------------------------------------------------- #
 def _load_stereo(path: str) -> np.ndarray:
     y, _ = librosa.load(path, sr=SR, mono=False)
@@ -55,17 +55,13 @@ def _load_stereo(path: str) -> np.ndarray:
 
 
 def _resolve_playlist(url: str) -> list:
-    """Return a list of watch URLs from a playlist (or a single video)."""
     out = subprocess.run(
         ["yt-dlp", "--flat-playlist", "--get-id", "--no-warnings", url],
-        capture_output=True, text=True, timeout=60,
-    )
-    ids = [x.strip() for x in out.stdout.splitlines() if x.strip()]
-    return [f"https://www.youtube.com/watch?v={vid}" for vid in ids]
+        capture_output=True, text=True, timeout=60)
+    return [f"https://www.youtube.com/watch?v={v.strip()}" for v in out.stdout.splitlines() if v.strip()]
 
 
 def _download(url: str) -> str:
-    """Download (cached by video id) the first _PER_TRACK_CAP seconds as wav."""
     vid = url.rsplit("=", 1)[-1].rsplit("/", 1)[-1]
     dst = DL_DIR / f"{vid}.wav"
     if dst.exists():
@@ -74,75 +70,84 @@ def _download(url: str) -> str:
     subprocess.run(
         ["yt-dlp", "-x", "--audio-format", "wav", "--no-playlist",
          "--extractor-args", "youtube:player_client=android",
-         "--download-sections", f"*0-{_PER_TRACK_CAP}",
-         "-o", str(tmp), url],
-        capture_output=True, text=True, timeout=DOWNLOAD_TIMEOUT_SEC, check=True,
-    )
+         "--download-sections", f"*0-{_PER_TRACK_CAP}", "-o", str(tmp), url],
+        capture_output=True, text=True, timeout=DOWNLOAD_TIMEOUT_SEC, check=True)
     cand = sorted(DL_DIR.glob(f"{vid}.src.*"))
     if not cand:
-        raise FileNotFoundError(f"download failed for {url}")
-    # normalize to wav/sr
+        raise FileNotFoundError(f"download failed: {url}")
     subprocess.run(["ffmpeg", "-y", "-i", str(cand[0]), "-ar", str(SR), str(dst)],
                    capture_output=True, check=True)
     cand[0].unlink(missing_ok=True)
     return str(dst)
 
 
-def _produce(sid: str, sources, is_playlist: bool, blend_bars: int, use_stems: bool = True):
-    s = SESSIONS[sid]
-    try:
-        # Bundled-sample shortcut (no network): slice a few demo tracks.
-        if not is_playlist and list(sources) == ["__SAMPLE__"]:
-            s["status"] = "loading sample tracks"
-            tracks = []
-            for f, start in _SAMPLE_SOURCES:
-                p = ROOT / f
-                if not p.exists():
-                    continue
+def _collect_tracks(sources, is_playlist, s) -> list:
+    if not is_playlist and list(sources) == ["__SAMPLE__"]:
+        s["status"] = "loading sample tracks"
+        tracks = []
+        for f, start in _SAMPLE_SOURCES:
+            p = ROOT / f
+            if p.exists():
                 y, _ = sf.read(str(p), start=int(start * SR), frames=int(_SAMPLE_DUR * SR))
                 tracks.append(y)
-            if not tracks:
-                raise RuntimeError("no sample audio found")
-            s["status"] = "mixing"
-            mixed, markers = build_continuous_set(
-                tracks, sr=SR, blend_bars=blend_bars, use_stems=use_stems,
-                progress=lambda i, n: s.update(status=f"mixing {i}/{n}"))
-            out = CACHE_DIR / f"set_{sid}.wav"
-            sf.write(out, mixed, SR)
-            s.update(status="ready", audio=str(out), markers=markers,
-                     duration=len(mixed) / SR, n_tracks=len(tracks))
-            return
+        return tracks
+    if is_playlist:
+        s["status"] = "resolving playlist"
+        urls = _resolve_playlist(sources)
+        tracks = []
+        for i, u in enumerate(urls):
+            s["status"] = f"downloading {i+1}/{len(urls)}"
+            try:
+                tracks.append(_load_stereo(_download(u)))
+            except Exception as e:
+                print(f"skip {u}: {e}")
+        return tracks
+    return [_load_stereo(p) for p in sources]
 
-        if is_playlist:
-            s["status"] = "resolving playlist"
-            urls = _resolve_playlist(sources)
-            if not urls:
-                raise RuntimeError("no tracks found in playlist")
-            paths = []
-            for i, u in enumerate(urls):
-                s["status"] = f"downloading {i+1}/{len(urls)}"
-                try:
-                    paths.append(_download(u))
-                except Exception as e:
-                    print(f"skip {u}: {e}")
-        else:
-            paths = list(sources)
-        if len(paths) < 1:
+
+# --------------------------------------------------------------------------- #
+# progressive producer
+# --------------------------------------------------------------------------- #
+def _produce(sid: str, sources, is_playlist: bool, blend_bars: int, use_stems: bool):
+    s = SESSIONS[sid]
+    s["chunks"] = []          # ordered list of chunk file paths
+    s["chunk_sec"] = CHUNK_SEC
+    CH = int(CHUNK_SEC * SR)
+    buf = {"pcm": np.zeros((0, 2), dtype=np.float32)}
+
+    def _flush(final=False):
+        while len(buf["pcm"]) >= CH or (final and len(buf["pcm"]) > 0):
+            take = buf["pcm"][:CH]
+            buf["pcm"] = buf["pcm"][CH:]
+            idx = len(s["chunks"])
+            p = CHUNK_DIR / f"{sid}_{idx:05d}.wav"
+            # float subtype preserves >1.0 sums; 0.9 uniform safety gain (consistent
+            # across chunks so no level steps), final master is the source level.
+            sf.write(p, np.clip(take * 0.9, -1.0, 1.0), SR, subtype="FLOAT")
+            s["chunks"].append(str(p))
+            if final and len(buf["pcm"]) == 0:
+                break
+
+    def _on_part(part):
+        buf["pcm"] = np.vstack([buf["pcm"], _as_stereo(np.asarray(part)).astype(np.float32)])
+        _flush(False)
+
+    try:
+        tracks = _collect_tracks(sources, is_playlist, s)
+        if not tracks:
             raise RuntimeError("no playable tracks")
-
-        s["status"] = "loading tracks"
-        tracks = [_load_stereo(p) for p in paths]
+        s["status"] = "mixing"
 
         def _prog(i, n):
             s["status"] = f"mixing {i}/{n}"
-        s["status"] = "mixing"
-        mixed, markers = build_continuous_set(tracks, sr=SR, blend_bars=blend_bars,
-                                              use_stems=use_stems, progress=_prog)
 
-        out = CACHE_DIR / f"set_{sid}.wav"
-        sf.write(out, mixed, SR)
-        s.update(status="ready", audio=str(out), markers=markers,
-                 duration=len(mixed) / SR, n_tracks=len(tracks))
+        _, markers = build_continuous_set(
+            tracks, sr=SR, blend_bars=blend_bars, use_stems=use_stems,
+            on_part=_on_part, progress=_prog)
+        _flush(final=True)
+        s.update(status="ready", markers=markers, n_tracks=len(tracks),
+                 chunk_count=len(s["chunks"]),
+                 duration=len(s["chunks"]) * CHUNK_SEC)
     except Exception as e:
         import traceback; traceback.print_exc()
         s.update(status="error", error=str(e))
@@ -166,10 +171,9 @@ def start():
     if not url and not files:
         return jsonify({"error": "provide a playlist url or files[]"}), 400
     sid = uuid.uuid4().hex[:12]
-    SESSIONS[sid] = {"status": "starting"}
-    threading.Thread(
-        target=_produce, args=(sid, url or files, bool(url), blend_bars, use_stems), daemon=True
-    ).start()
+    SESSIONS[sid] = {"status": "starting", "chunks": [], "chunk_sec": CHUNK_SEC}
+    threading.Thread(target=_produce, args=(sid, url or files, bool(url), blend_bars, use_stems),
+                     daemon=True).start()
     return jsonify({"session_id": sid})
 
 
@@ -181,20 +185,26 @@ def status(sid):
     return jsonify({
         "status": s.get("status"),
         "error": s.get("error"),
+        "chunk_sec": s.get("chunk_sec", CHUNK_SEC),
+        "chunks_ready": len(s.get("chunks", [])),      # grows during render
+        "chunk_count": s.get("chunk_count"),           # set only when finished
         "duration": s.get("duration"),
         "n_tracks": s.get("n_tracks"),
         "markers": s.get("markers") if s.get("status") == "ready" else None,
-        "audio_url": f"/api/set/{sid}/audio" if s.get("status") == "ready" else None,
     })
 
 
-@app.route("/api/set/<sid>/audio")
-def audio(sid):
+@app.route("/api/set/<sid>/chunk/<int:n>")
+def chunk(sid, n):
     s = SESSIONS.get(sid)
-    if not s or s.get("status") != "ready":
-        return jsonify({"error": "not ready"}), 404
-    # send_file supports Range requests -> the <audio> element can seek/stream.
-    return send_file(s["audio"], mimetype="audio/wav", conditional=True)
+    if not s:
+        return jsonify({"error": "not found"}), 404
+    chunks = s.get("chunks", [])
+    if n >= len(chunks):
+        # not produced yet (client should retry) or past the end
+        code = 416 if s.get("status") in ("ready", "error") else 404
+        return ("", code)
+    return send_file(chunks[n], mimetype="audio/wav", conditional=True)
 
 
 if __name__ == "__main__":

@@ -22,23 +22,22 @@
   button.ghost { background:#222533; }
   button:disabled { opacity:.5; cursor:default; }
   .bars { display:flex; align-items:center; gap:8px; color:var(--mut); font-size:13px; }
-  .bars input { width:130px; }
+  .bars input[type=range] { width:120px; }
   #status { margin-top:14px; font-size:14px; color:var(--accent2); min-height:20px; }
-  audio { width:100%; margin-top:6px; }
+  .pbar { height:8px; background:#0e0f15; border-radius:6px; overflow:hidden; margin-top:14px; border:1px solid #2a2d39; }
+  .pbar > div { height:100%; width:0; background:linear-gradient(90deg,var(--accent2),var(--accent)); transition:width .2s; }
   .timeline { display:flex; height:34px; border-radius:8px; overflow:hidden; margin-top:14px; border:1px solid #2a2d39; }
-  .seg { display:flex; align-items:center; justify-content:center; font-size:11px; color:#0b0c10; font-weight:700;
-         white-space:nowrap; overflow:hidden; }
+  .seg { display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; white-space:nowrap; overflow:hidden; }
   .seg.track { background:#3a3f55; color:#cfd3e6; }
-  .seg.transition { background:linear-gradient(135deg,var(--accent2),var(--accent)); }
+  .seg.transition { background:linear-gradient(135deg,var(--accent2),var(--accent)); color:#0b0c10; }
+  .nowplaying { margin-top:10px; font-size:14px; } .nowplaying b { color:var(--accent2); }
   .legend { color:var(--mut); font-size:12px; margin-top:8px; }
-  .nowplaying { margin-top:10px; font-size:14px; }
-  .nowplaying b { color:var(--accent2); }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>🎛️ Club AutoMixer</h1>
-  <p class="sub">Paste a YouTube playlist — get one continuous, beat-matched, gapless club mix.</p>
+  <p class="sub">Paste a YouTube playlist — get one continuous, beat-matched, gapless club mix that starts instantly.</p>
 
   <div class="panel">
     <label>YouTube playlist (or single video) URL</label>
@@ -46,20 +45,20 @@
     <div class="row">
       <div class="bars">Blend
         <input id="bars" type="range" min="8" max="32" step="8" value="16"/>
-        <span id="barsval">16</span> bars
-      </div>
-      <label class="bars" style="margin:0"><input id="stems" type="checkbox" checked/> demucs stems (cleaner, slower)</label>
+        <span id="barsval">16</span> bars</div>
+      <label class="bars" style="margin:0"><input id="stems" type="checkbox" checked/> demucs stems</label>
       <button id="go">Mix &amp; Play</button>
-      <button id="sample" class="ghost" title="Use bundled audio (no download)">Try sample</button>
+      <button id="sample" class="ghost">Try sample</button>
+      <button id="stop" class="ghost" style="display:none">Stop</button>
     </div>
     <div id="status"></div>
   </div>
 
   <div class="panel" id="player" style="display:none">
-    <audio id="audio" controls></audio>
-    <div class="timeline" id="timeline"></div>
-    <div class="legend">grey = track &nbsp;•&nbsp; gradient = beat-matched transition (hover for type)</div>
+    <div class="pbar"><div id="fill"></div></div>
     <div class="nowplaying" id="now"></div>
+    <div class="timeline" id="timeline"></div>
+    <div class="legend">grey = track • gradient = beat-matched transition (hover for type)</div>
   </div>
 </div>
 
@@ -67,58 +66,92 @@
 const $ = s => document.querySelector(s);
 $("#bars").oninput = e => $("#barsval").textContent = e.target.value;
 
+let ctx, gain, sid, playing = false;
+let nextIdx = 0, nextTime = 0, t0 = 0, chunkSec = 4, statusInfo = {};
+
 async function start(body) {
+  stopAll();
   $("#player").style.display = "none";
   $("#status").textContent = "starting…";
   $("#go").disabled = $("#sample").disabled = true;
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  gain = ctx.createGain(); gain.gain.value = 1.0; gain.connect(ctx.destination);
   try {
     const r = await fetch("/api/set/start", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
     const j = await r.json();
     if (j.error) throw new Error(j.error);
-    poll(j.session_id);
-  } catch (e) { $("#status").textContent = "✗ " + e.message; $("#go").disabled=$("#sample").disabled=false; }
+    sid = j.session_id; nextIdx = 0; nextTime = 0; playing = true;
+    $("#stop").style.display = "inline-block";
+    pollAndPump();
+  } catch (e) { fail(e.message); }
 }
 
-async function poll(sid) {
-  const r = await fetch("/api/set/" + sid);
-  const j = await r.json();
-  if (j.status === "ready") {
-    $("#status").textContent = `✓ Ready — ${j.n_tracks} tracks, ${Math.round(j.duration)}s continuous mix`;
-    $("#go").disabled = $("#sample").disabled = false;
-    showPlayer(j);
-  } else if (j.status === "error") {
-    $("#status").textContent = "✗ " + (j.error || "failed");
-    $("#go").disabled = $("#sample").disabled = false;
-  } else {
-    $("#status").textContent = "⏳ " + j.status + " …";
-    setTimeout(() => poll(sid), 1200);
+function fail(m){ $("#status").textContent = "✗ " + m; $("#go").disabled=$("#sample").disabled=false; $("#stop").style.display="none"; }
+function stopAll(){ playing=false; if(ctx){ try{ctx.close();}catch(_){} ctx=null; } }
+$("#stop").onclick = () => { stopAll(); $("#status").textContent="⏹ stopped"; $("#go").disabled=$("#sample").disabled=false; $("#stop").style.display="none"; };
+
+async function getStatus(){ const r = await fetch("/api/set/"+sid); return r.json(); }
+
+async function pollAndPump(){
+  if(!playing) return;
+  try { statusInfo = await getStatus(); } catch(_){}
+  chunkSec = statusInfo.chunk_sec || 4;
+  if (statusInfo.status === "error") return fail(statusInfo.error || "render failed");
+
+  if (!$("#player").style.display || $("#player").style.display === "none") {
+    if ((statusInfo.chunks_ready||0) >= 1) { $("#player").style.display = "block"; }
   }
+  const ready = statusInfo.chunks_ready || 0;
+  const total = statusInfo.chunk_count;            // null until finished
+  $("#status").textContent = statusInfo.status === "ready"
+    ? `▶ playing full set — ${statusInfo.n_tracks} tracks`
+    : "⏳ " + statusInfo.status + " (rendering ahead…)";
+
+  // schedule any available chunks, keeping ~8s buffered ahead
+  while (playing && nextIdx < ready && nextTime < ctx.currentTime + 8) {
+    try {
+      const ab = await (await fetch(`/api/set/${sid}/chunk/${nextIdx}`)).arrayBuffer();
+      const buf = await ctx.decodeAudioData(ab);
+      const src = ctx.createBufferSource(); src.buffer = buf; src.connect(gain);
+      if (nextTime < ctx.currentTime) nextTime = ctx.currentTime + 0.12; // first chunk / underrun
+      if (nextIdx === 0) t0 = nextTime;
+      src.start(nextTime);
+      nextTime += buf.duration;
+      nextIdx++;
+    } catch (e) { break; }
+  }
+
+  // progress + now-playing
+  if (ctx && t0 > 0) {
+    const elapsed = Math.max(0, ctx.currentTime - t0);
+    if (total) $("#fill").style.width = Math.min(100, 100*elapsed/(total*chunkSec)) + "%";
+    updateNow(elapsed);
+  }
+  if (statusInfo.status === "ready" && statusInfo.markers && !$("#timeline").dataset.built) buildTimeline(statusInfo);
+
+  const finished = total != null && nextIdx >= total;
+  if (finished) { $("#status").textContent = "✓ set complete"; $("#stop").style.display="none"; $("#go").disabled=$("#sample").disabled=false; return; }
+  setTimeout(pollAndPump, 250);
 }
 
-function showPlayer(j) {
-  $("#player").style.display = "block";
-  const a = $("#audio"); a.src = j.audio_url; a.load();
-  const tl = $("#timeline"); tl.innerHTML = "";
-  const dur = j.duration || 1;
-  (j.markers || []).forEach(m => {
-    const w = Math.max(0, (m.end_sec - m.start_sec) / dur * 100);
+function buildTimeline(j){
+  const tl = $("#timeline"); tl.innerHTML = ""; tl.dataset.built = "1";
+  const dur = j.markers[j.markers.length-1].end_sec || 1;
+  j.markers.forEach(m => {
     const d = document.createElement("div");
     d.className = "seg " + m.type;
-    d.style.width = w + "%";
-    d.title = m.type === "transition" ? `transition (${m.transition_type})` : `track ${m.index+1}`;
-    d.textContent = m.type === "transition" ? "↔" : ("T" + (m.index+1));
+    d.style.width = Math.max(0,(m.end_sec-m.start_sec)/dur*100) + "%";
+    d.title = m.type==="transition" ? `transition (${m.transition_type})` : `track ${m.index+1}`;
+    d.textContent = m.type==="transition" ? "↔" : ("T"+(m.index+1));
     tl.appendChild(d);
   });
-  // now-playing readout from the marker under the playhead
-  a.ontimeupdate = () => {
-    const t = a.currentTime;
-    const m = (j.markers || []).find(m => t >= m.start_sec && t < m.end_sec);
-    if (!m) return;
-    $("#now").innerHTML = m.type === "transition"
+}
+function updateNow(elapsed){
+  const m = (statusInfo.markers||[]).find(m => elapsed>=m.start_sec && elapsed<m.end_sec);
+  if (m) $("#now").innerHTML = m.type==="transition"
       ? `🔀 <b>transition</b> (${m.transition_type}) — track ${m.from+1} → ${m.to+1}`
       : `▶️ <b>track ${m.index+1}</b>`;
-  };
-  a.play().catch(()=>{});
+  else $("#now").innerHTML = `▶️ playing… (${elapsed.toFixed(0)}s)`;
 }
 
 $("#go").onclick = () => {
