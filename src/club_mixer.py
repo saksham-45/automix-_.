@@ -34,6 +34,7 @@ class PhraseGrid:
     downbeats: np.ndarray        # downbeat times (seconds), bar-1 of each bar
     bar_energy: np.ndarray       # RMS per bar (len == len(downbeats)-1, padded)
     duration: float              # seconds
+    sections: Optional[list] = None  # [{start_sec,end_sec,label:'low'|'high',energy}]
 
 
 def _to_mono(y: np.ndarray) -> np.ndarray:
@@ -53,6 +54,61 @@ def _estimate_downbeat_offset(onset_at_beats: np.ndarray) -> int:
         if m > best_val:
             best_val, best_off = m, off
     return best_off
+
+
+def _detect_sections(mono: np.ndarray, sr: int, beats: np.ndarray,
+                     downbeats: np.ndarray, bar_dur: float,
+                     bar_energy: np.ndarray, hop_length: int = 512) -> list:
+    """Structural segmentation via a beat-synchronous self-similarity matrix +
+    Foote Gaussian checkerboard novelty (Foote 2000 / Müller FMP). Boundaries are
+    snapped to downbeats (discarded if >0.4 bar away) and labelled low/high energy
+    so the planner can mix OUT on a low section (outro/breakdown) and IN on a low
+    section (intro/breakdown). Falls back to one 'high' section on short input."""
+    full = [{"start_sec": 0.0, "end_sec": len(mono) / sr, "label": "high", "energy": 1.0}]
+    if len(beats) < 16 or len(downbeats) < 2:
+        return full
+    try:
+        chroma = librosa.feature.chroma_cqt(y=mono, sr=sr, hop_length=hop_length)
+        mfcc = librosa.feature.mfcc(y=mono, sr=sr, hop_length=hop_length, n_mfcc=13)
+        feat = np.vstack([chroma, mfcc])
+        bf = np.clip(librosa.time_to_frames(beats, sr=sr, hop_length=hop_length), 0, feat.shape[1] - 1)
+        X = librosa.util.sync(feat, bf, aggregate=np.mean).T            # [n_beats, F]
+        X = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-9)
+        S = X @ X.T                                                      # cosine SSM
+        n = S.shape[0]
+        L = min(16, n // 2)                                             # half-kernel (~4 bars)
+        if L < 2:
+            return full
+        taper = np.outer(np.hanning(2 * L), np.hanning(2 * L))
+        checker = np.ones((2 * L, 2 * L)); checker[:L, L:] = -1; checker[L:, :L] = -1
+        kernel = taper * checker
+        nov = np.zeros(n)
+        for i in range(L, n - L):
+            nov[i] = float(np.sum(S[i - L:i + L, i - L:i + L] * kernel))
+        nov = np.maximum(nov, 0.0)
+        if nov.max() > 0:
+            nov /= nov.max()
+        from scipy.signal import find_peaks
+        peaks, _ = find_peaks(nov, height=0.3, distance=16)            # >=4 bars apart
+        # snap peak beat-times to downbeats within 0.4 bar
+        bounds = {0.0}
+        for t in beats[peaks]:
+            d = float(downbeats[int(np.argmin(np.abs(downbeats - t)))])
+            if abs(d - t) <= 0.4 * bar_dur:
+                bounds.add(d)
+        bnds = sorted(bounds) + [len(mono) / sr]
+        med = float(np.median(bar_energy)) if len(bar_energy) else 0.0
+        secs = []
+        for s, e in zip(bnds, bnds[1:]):
+            if e - s < bar_dur:
+                continue
+            idx = [i for i, db in enumerate(downbeats) if s <= db < e]
+            en = float(np.mean([bar_energy[i] for i in idx])) if idx else 0.0
+            secs.append({"start_sec": float(s), "end_sec": float(e),
+                         "label": "high" if en >= med else "low", "energy": en})
+        return secs or full
+    except Exception:
+        return full
 
 
 def build_phrase_grid(y: np.ndarray, sr: int, hop_length: int = 512,
@@ -89,7 +145,9 @@ def build_phrase_grid(y: np.ndarray, sr: int, hop_length: int = 512,
         bar_energy.append(float(np.sqrt(np.mean(seg ** 2)) + 1e-9) if len(seg) else 1e-9)
     bar_energy = np.asarray(bar_energy)
 
-    return PhraseGrid(sr, tempo, bar_dur, downbeats, bar_energy, duration)
+    sections = _detect_sections(mono, sr, np.asarray(beats, dtype=float),
+                                downbeats, bar_dur, bar_energy, hop_length)
+    return PhraseGrid(sr, tempo, bar_dur, downbeats, bar_energy, duration, sections)
 
 
 # ----------------------------------------------------------------------------- #
@@ -138,24 +196,41 @@ def plan_transition(grid_a: PhraseGrid, grid_b: PhraseGrid,
     half = blend_bars / 2.0
     half_sec = half * bar_dur
 
-    # --- A switch (t2): latest downbeat with room for +/- half the blend. ---
+    # --- A switch (t2): prefer the start of A's LAST low-energy section
+    #     (outro/breakdown) with room; else the latest valid downbeat. ---
     a_valid = [db for db in grid_a.downbeats
                if db - half_sec >= 0 and db + half_sec <= grid_a.duration]
-    if a_valid:
-        a_switch = float(a_valid[-1])          # latest => mix out near the outro
-    else:
-        a_switch = _nearest_downbeat(grid_a.downbeats, max(0.0, grid_a.duration - half_sec))
+    a_switch = None
+    if grid_a.sections:
+        low_starts = [s["start_sec"] for s in grid_a.sections
+                      if s.get("label") == "low"
+                      and s["start_sec"] - half_sec >= 0
+                      and s["start_sec"] + half_sec <= grid_a.duration]
+        if low_starts:
+            # snap to the nearest actual downbeat (section starts already are)
+            a_switch = _nearest_downbeat(grid_a.downbeats, float(low_starts[-1]))
+    if a_switch is None:
+        a_switch = float(a_valid[-1]) if a_valid else _nearest_downbeat(
+            grid_a.downbeats, max(0.0, grid_a.duration - half_sec))
     a_t1 = max(0.0, a_switch - half_sec)
     a_t3 = min(grid_a.duration, a_switch + half_sec)
 
-    # --- B mix-in: first downbeat whose following bar actually has energy. ---
-    b_in = float(grid_b.downbeats[0]) if len(grid_b.downbeats) else 0.0
-    if len(grid_b.bar_energy):
-        thr = 0.15 * float(np.median(grid_b.bar_energy) + 1e-9)
-        for i, db in enumerate(grid_b.downbeats):
-            if grid_b.bar_energy[min(i, len(grid_b.bar_energy) - 1)] > thr:
-                b_in = float(db)
+    # --- B mix-in: prefer the start of B's FIRST low-energy section
+    #     (intro/breakdown) with room; else first downbeat with real energy. ---
+    b_in = None
+    if grid_b.sections:
+        for s in grid_b.sections:
+            if s.get("label") == "low" and s["start_sec"] + blend_bars * bar_dur <= grid_b.duration:
+                b_in = _nearest_downbeat(grid_b.downbeats, float(s["start_sec"]))
                 break
+    if b_in is None:
+        b_in = float(grid_b.downbeats[0]) if len(grid_b.downbeats) else 0.0
+        if len(grid_b.bar_energy):
+            thr = 0.15 * float(np.median(grid_b.bar_energy) + 1e-9)
+            for i, db in enumerate(grid_b.downbeats):
+                if grid_b.bar_energy[min(i, len(grid_b.bar_energy) - 1)] > thr:
+                    b_in = float(db)
+                    break
     # Ensure B has room for the whole blend after b_in.
     if b_in + blend_bars * bar_dur > grid_b.duration:
         b_in = max(0.0, grid_b.duration - blend_bars * bar_dur)
