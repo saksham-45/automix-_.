@@ -43,7 +43,7 @@ _SAMPLE_SOURCES = [
     ("mixes/goingbad_sunflower_mix.wav", 30.0),
     ("mixes/lookback_wakeup_mix.wav", 40.0),
 ]
-_SAMPLE_DUR = 45.0
+_SAMPLE_DUR = 80.0   # long enough that track bodies are audible between transitions
 
 
 # --------------------------------------------------------------------------- #
@@ -111,6 +111,7 @@ def _collect_tracks(sources, is_playlist, s) -> list:
 def _produce(sid: str, sources, is_playlist: bool, blend_bars: int, use_stems: bool):
     s = SESSIONS[sid]
     s["chunks"] = []          # ordered list of chunk file paths
+    s["markers"] = []         # grows as parts are produced (for live UI)
     s["chunk_sec"] = CHUNK_SEC
     CH = int(CHUNK_SEC * SR)
     buf = {"pcm": np.zeros((0, 2), dtype=np.float32)}
@@ -128,8 +129,10 @@ def _produce(sid: str, sources, is_playlist: bool, blend_bars: int, use_stems: b
             if final and len(buf["pcm"]) == 0:
                 break
 
-    def _on_part(part):
+    def _on_part(part, marker=None):
         buf["pcm"] = np.vstack([buf["pcm"], _as_stereo(np.asarray(part)).astype(np.float32)])
+        if marker:
+            s["markers"].append(marker)
         _flush(False)
 
     try:
@@ -145,7 +148,8 @@ def _produce(sid: str, sources, is_playlist: bool, blend_bars: int, use_stems: b
             tracks, sr=SR, blend_bars=blend_bars, use_stems=use_stems,
             on_part=_on_part, progress=_prog)
         _flush(final=True)
-        s.update(status="ready", markers=markers, n_tracks=len(tracks),
+        s["markers"] = markers     # authoritative full list
+        s.update(status="ready", n_tracks=len(tracks),
                  chunk_count=len(s["chunks"]),
                  duration=len(s["chunks"]) * CHUNK_SEC)
     except Exception as e:
@@ -190,7 +194,7 @@ def status(sid):
         "chunk_count": s.get("chunk_count"),           # set only when finished
         "duration": s.get("duration"),
         "n_tracks": s.get("n_tracks"),
-        "markers": s.get("markers") if s.get("status") == "ready" else None,
+        "markers": s.get("markers") or None,   # live, grows during render
     })
 
 

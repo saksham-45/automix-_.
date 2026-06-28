@@ -66,92 +66,114 @@
 const $ = s => document.querySelector(s);
 $("#bars").oninput = e => $("#barsval").textContent = e.target.value;
 
-let ctx, gain, sid, playing = false;
-let nextIdx = 0, nextTime = 0, t0 = 0, chunkSec = 4, statusInfo = {};
+let ctx, gain, sid, gen = 0;
+let nextIdx = 0, nextTime = 0, t0 = 0, started = false, tlLen = 0, statusInfo = {};
+const PREBUFFER = 4;     // chunks (~16s) buffered before playback starts (prevents underrun)
+const LOOKAHEAD = 12;    // seconds scheduled ahead of the playhead
+const scheduled = new Set();  // chunk indices already scheduled (never twice)
+
+function fail(m){ $("#status").textContent = "✗ " + m; resetButtons(); }
+function resetButtons(){ $("#go").disabled=$("#sample").disabled=false; $("#stop").style.display="none"; }
+function stopAll(){ gen++; if(ctx){ try{ctx.close();}catch(_){} ctx=null; } }   // gen++ kills any running loop
+$("#stop").onclick = () => { stopAll(); $("#status").textContent="⏹ stopped"; resetButtons(); };
 
 async function start(body) {
   stopAll();
+  const myGen = ++gen;                         // unique generation for THIS run
+  nextIdx = 0; nextTime = 0; t0 = 0; started = false; tlLen = 0; statusInfo = {};
+  scheduled.clear();
   $("#player").style.display = "none";
+  $("#timeline").innerHTML = ""; $("#now").innerHTML = "";
   $("#status").textContent = "starting…";
-  $("#go").disabled = $("#sample").disabled = true;
+  $("#go").disabled = $("#sample").disabled = true; $("#stop").style.display = "inline-block";
   ctx = new (window.AudioContext || window.webkitAudioContext)();
   gain = ctx.createGain(); gain.gain.value = 1.0; gain.connect(ctx.destination);
   try {
     const r = await fetch("/api/set/start", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
     const j = await r.json();
     if (j.error) throw new Error(j.error);
-    sid = j.session_id; nextIdx = 0; nextTime = 0; playing = true;
-    $("#stop").style.display = "inline-block";
-    pollAndPump();
+    sid = j.session_id;
+    loop(myGen);
   } catch (e) { fail(e.message); }
 }
 
-function fail(m){ $("#status").textContent = "✗ " + m; $("#go").disabled=$("#sample").disabled=false; $("#stop").style.display="none"; }
-function stopAll(){ playing=false; if(ctx){ try{ctx.close();}catch(_){} ctx=null; } }
-$("#stop").onclick = () => { stopAll(); $("#status").textContent="⏹ stopped"; $("#go").disabled=$("#sample").disabled=false; $("#stop").style.display="none"; };
-
-async function getStatus(){ const r = await fetch("/api/set/"+sid); return r.json(); }
-
-async function pollAndPump(){
-  if(!playing) return;
-  try { statusInfo = await getStatus(); } catch(_){}
-  chunkSec = statusInfo.chunk_sec || 4;
-  if (statusInfo.status === "error") return fail(statusInfo.error || "render failed");
-
-  if (!$("#player").style.display || $("#player").style.display === "none") {
-    if ((statusInfo.chunks_ready||0) >= 1) { $("#player").style.display = "block"; }
-  }
-  const ready = statusInfo.chunks_ready || 0;
-  const total = statusInfo.chunk_count;            // null until finished
-  $("#status").textContent = statusInfo.status === "ready"
-    ? `▶ playing full set — ${statusInfo.n_tracks} tracks`
-    : "⏳ " + statusInfo.status + " (rendering ahead…)";
-
-  // schedule any available chunks, keeping ~8s buffered ahead
-  while (playing && nextIdx < ready && nextTime < ctx.currentTime + 8) {
-    try {
-      const ab = await (await fetch(`/api/set/${sid}/chunk/${nextIdx}`)).arrayBuffer();
-      const buf = await ctx.decodeAudioData(ab);
-      const src = ctx.createBufferSource(); src.buffer = buf; src.connect(gain);
-      if (nextTime < ctx.currentTime) nextTime = ctx.currentTime + 0.12; // first chunk / underrun
-      if (nextIdx === 0) t0 = nextTime;
-      src.start(nextTime);
-      nextTime += buf.duration;
-      nextIdx++;
-    } catch (e) { break; }
-  }
-
-  // progress + now-playing
-  if (ctx && t0 > 0) {
-    const elapsed = Math.max(0, ctx.currentTime - t0);
-    if (total) $("#fill").style.width = Math.min(100, 100*elapsed/(total*chunkSec)) + "%";
-    updateNow(elapsed);
-  }
-  if (statusInfo.status === "ready" && statusInfo.markers && !$("#timeline").dataset.built) buildTimeline(statusInfo);
-
-  const finished = total != null && nextIdx >= total;
-  if (finished) { $("#status").textContent = "✓ set complete"; $("#stop").style.display="none"; $("#go").disabled=$("#sample").disabled=false; return; }
-  setTimeout(pollAndPump, 250);
+async function fetchDecode(i){
+  const r = await fetch(`/api/set/${sid}/chunk/${i}`);
+  if (r.status !== 200) return null;            // not produced yet -> retry next tick
+  try { return await ctx.decodeAudioData(await r.arrayBuffer()); } catch(_) { return null; }
 }
 
-function buildTimeline(j){
-  const tl = $("#timeline"); tl.innerHTML = ""; tl.dataset.built = "1";
-  const dur = j.markers[j.markers.length-1].end_sec || 1;
-  j.markers.forEach(m => {
+async function loop(myGen){
+  if (myGen !== gen) return;                     // stale run -> die (prevents double playback)
+  try { statusInfo = await fetch("/api/set/"+sid).then(r=>r.json()); } catch(_){}
+  if (myGen !== gen) return;
+  if (statusInfo.status === "error") return fail(statusInfo.error || "render failed");
+
+  const ready = statusInfo.chunks_ready || 0;
+  const total = statusInfo.chunk_count;          // null until finished
+  const chunkSec = statusInfo.chunk_sec || 4;
+
+  // Start playback only after a healthy prebuffer (or once the whole set is done).
+  if (!started && (ready >= PREBUFFER || (total != null && ready >= total))) {
+    started = true;
+    t0 = ctx.currentTime + 0.3;
+    nextTime = t0;
+    $("#player").style.display = "block";
+  }
+
+  if (started) {
+    while (myGen === gen && nextIdx < ready && nextTime < ctx.currentTime + LOOKAHEAD) {
+      if (scheduled.has(nextIdx)) { nextIdx++; continue; }   // belt-and-suspenders: never twice
+      const buf = await fetchDecode(nextIdx);
+      if (myGen !== gen) return;
+      if (!buf) break;                            // chunk not ready -> retry same index next tick
+      if (nextTime < ctx.currentTime) nextTime = ctx.currentTime + 0.05;  // underrun: small resync, no overlap
+      const src = ctx.createBufferSource(); src.buffer = buf; src.connect(gain);
+      src.start(nextTime);
+      scheduled.add(nextIdx);
+      nextTime += buf.duration;
+      nextIdx++;
+    }
+  }
+
+  // ---- UI (live markers) ----
+  const markers = statusInfo.markers || [];
+  if (markers.length !== tlLen) { buildTimeline(markers); tlLen = markers.length; }
+  if (started) {
+    const elapsed = Math.max(0, ctx.currentTime - t0);
+    const denom = (total != null ? total*chunkSec : Math.max(elapsed, (markers.length?markers[markers.length-1].end_sec:1)));
+    $("#fill").style.width = Math.min(100, 100*elapsed/Math.max(denom,1)) + "%";
+    updateNow(elapsed, markers);
+    $("#status").textContent = statusInfo.status === "ready"
+      ? `▶ full set ready — ${statusInfo.n_tracks} tracks` : "▶ playing (rendering ahead…)";
+  } else {
+    $("#status").textContent = "⏳ " + (statusInfo.status||"working") + " — buffering " + ready + "/" + PREBUFFER;
+  }
+
+  const finished = total != null && nextIdx >= total;
+  if (finished) { $("#status").textContent = "✓ set complete"; resetButtons(); return; }
+  setTimeout(() => loop(myGen), 200);
+}
+
+function buildTimeline(markers){
+  const tl = $("#timeline"); tl.innerHTML = "";
+  if (!markers.length) return;
+  const dur = markers[markers.length-1].end_sec || 1;
+  markers.forEach(m => {
     const d = document.createElement("div");
     d.className = "seg " + m.type;
-    d.style.width = Math.max(0,(m.end_sec-m.start_sec)/dur*100) + "%";
+    d.style.width = Math.max(0.5,(m.end_sec-m.start_sec)/dur*100) + "%";
     d.title = m.type==="transition" ? `transition (${m.transition_type})` : `track ${m.index+1}`;
     d.textContent = m.type==="transition" ? "↔" : ("T"+(m.index+1));
     tl.appendChild(d);
   });
 }
-function updateNow(elapsed){
-  const m = (statusInfo.markers||[]).find(m => elapsed>=m.start_sec && elapsed<m.end_sec);
+function updateNow(elapsed, markers){
+  const m = markers.find(m => elapsed>=m.start_sec && elapsed<m.end_sec);
   if (m) $("#now").innerHTML = m.type==="transition"
-      ? `🔀 <b>transition</b> (${m.transition_type}) — track ${m.from+1} → ${m.to+1}`
+      ? `🔀 <b>${m.transition_type} transition</b> — track ${m.from+1} → ${m.to+1}`
       : `▶️ <b>track ${m.index+1}</b>`;
-  else $("#now").innerHTML = `▶️ playing… (${elapsed.toFixed(0)}s)`;
+  else if (markers.length) $("#now").innerHTML = `▶️ <b>track 1</b>`;
 }
 
 $("#go").onclick = () => {
