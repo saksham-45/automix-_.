@@ -353,25 +353,21 @@ class MicroTimingEngine:
                 'aligned_point_b': point_b_sec
             }
         
-        # Cross-correlate transient positions to find optimal offset
-        best_offset = 0.0
-        best_score = 0.0
-        
-        # Test offsets from -50ms to +50ms
-        for offset_ms in np.linspace(-50, 50, 201):
-            offset_sec = offset_ms / 1000
-            
-            # Count aligned transients
-            aligned_count = 0
-            for t_a in local_a:
-                for t_b in local_b:
-                    if abs((t_a + offset_sec) - t_b) < 0.002:  # 2ms tolerance
-                        aligned_count += 1
-            
-            score = aligned_count / max(len(local_a), len(local_b))
-            if score > best_score:
-                best_score = score
-                best_offset = offset_ms
+        # Cross-correlate transient positions to find optimal offset.
+        # Vectorized equivalent of the old O(offsets * Na * Nb) triple loop:
+        # for each candidate offset, count pairs with |(t_a+offset) - t_b| < 2ms.
+        # The aligning offset for a pair is (t_b - t_a); a candidate matches it
+        # when |offset - (t_b - t_a)| < 2ms.
+        offsets_ms = np.linspace(-50, 50, 201)
+        offsets_sec = offsets_ms / 1000.0
+        pair_offsets = (local_b[None, :] - local_a[:, None]).ravel()  # (Na*Nb,)
+        within = np.abs(offsets_sec[:, None] - pair_offsets[None, :]) < 0.002
+        counts = within.sum(axis=1)
+        scores = counts / max(len(local_a), len(local_b))
+        best_idx = int(np.argmax(scores))
+        best_score = float(scores[best_idx])
+        # Match the old behaviour: if nothing aligns, report zero offset.
+        best_offset = float(offsets_ms[best_idx]) if best_score > 0.0 else 0.0
         
         return {
             'offset_ms': float(best_offset),
