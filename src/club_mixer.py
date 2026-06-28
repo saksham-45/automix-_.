@@ -19,6 +19,8 @@ from __future__ import annotations
 import numpy as np
 import librosa
 import scipy.signal as sig
+import hashlib
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
@@ -111,10 +113,31 @@ def _detect_sections(mono: np.ndarray, sr: int, beats: np.ndarray,
         return full
 
 
+_GRID_CACHE: "OrderedDict[str, PhraseGrid]" = OrderedDict()
+_GRID_CACHE_CAP = 64
+
+
 def build_phrase_grid(y: np.ndarray, sr: int, hop_length: int = 512,
                       phrase_bars: int = 8) -> PhraseGrid:
-    """Beats → downbeat phase → bars → (phrase-aligned) downbeat grid + per-bar energy."""
+    """Beats → downbeat phase → bars → (phrase-aligned) downbeat grid + per-bar energy.
+    Cached by audio content (beat-tracking + chroma/MFCC structure analysis is the
+    expensive part; build_continuous_set otherwise re-analyzes each track twice)."""
     mono = _to_mono(y).astype(np.float32)
+    key = hashlib.md5(np.ascontiguousarray(mono).tobytes()).hexdigest() + f"|{sr}|{phrase_bars}"
+    cached = _GRID_CACHE.get(key)
+    if cached is not None:
+        _GRID_CACHE.move_to_end(key)
+        return cached
+    grid = _build_phrase_grid_uncached(mono, sr, hop_length, phrase_bars)
+    _GRID_CACHE[key] = grid
+    _GRID_CACHE.move_to_end(key)
+    while len(_GRID_CACHE) > _GRID_CACHE_CAP:
+        _GRID_CACHE.popitem(last=False)
+    return grid
+
+
+def _build_phrase_grid_uncached(mono: np.ndarray, sr: int, hop_length: int,
+                                phrase_bars: int) -> PhraseGrid:
     tempo, beats = librosa.beat.beat_track(y=mono, sr=sr, hop_length=hop_length, units='time')
     tempo = float(np.atleast_1d(tempo)[0]) or 120.0
     bar_dur = 4.0 * 60.0 / tempo
