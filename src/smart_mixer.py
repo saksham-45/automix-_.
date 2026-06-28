@@ -354,9 +354,11 @@ class SmartMixer:
             if abs(tempo_a - tempo_b) > 1.0:
                 print(f"  ⚡ Aligning tempos: {tempo_a:.1f} vs {tempo_b:.1f} BPM")
                 
-                # Stretch the incoming track (seg_b) to match outgoing (seg_a)
-                # Or stretch both to average? Let's stretch B to match A for smoother handoff
-                rate = tempo_b / tempo_a
+                # Stretch the incoming track (seg_b) to match outgoing (seg_a).
+                # librosa.time_stretch(rate>1) SPEEDS UP, so to retune B's tempo from
+                # tempo_b to tempo_a the rate must be tempo_a/tempo_b (was inverted,
+                # which pushed B's tempo further from A).
+                rate = tempo_a / tempo_b
                 
                 # Check if rate is reasonable (don't stretch more than +/- 20%)
                 if 0.8 <= rate <= 1.2:
@@ -711,6 +713,7 @@ class SmartMixer:
             
             print("    Detecting tempo...")
             tempo, _ = librosa.beat.beat_track(y=y_sample, sr=self.sr, hop_length=self.hop_length)
+            tempo = float(np.atleast_1d(tempo)[0])  # librosa>=0.10 returns array
             tempo = float(tempo)
         
         # Quick structure analysis (simplified) - skip if too slow

@@ -860,6 +860,32 @@ class SuperhumanDJEngine:
             return str(techniques[0])
         return str(selected_technique.get('name', '')) if isinstance(selected_technique, dict) else ''
 
+    def _render_safety_blend(self,
+                             seg_a: np.ndarray,
+                             seg_b: np.ndarray,
+                             safety_profile: Optional[Dict] = None,
+                             role_plan: Optional[Dict] = None) -> np.ndarray:
+        """
+        Last-resort, always-valid transition: a plain full-band equal-power crossfade.
+
+        Invoked when both the selected technique and the conservative phrase_match
+        re-render raise. Previously this method was referenced but never defined, so
+        the safety-rescue path itself threw AttributeError (a double fault).
+        """
+        from src.crossfade_engine import CrossfadeEngine
+        ce = CrossfadeEngine(sr=self.sr)
+        a = seg_a if seg_a.ndim > 1 else np.column_stack([seg_a, seg_a])
+        b = seg_b if seg_b.ndim > 1 else np.column_stack([seg_b, seg_b])
+        n = min(len(a), len(b))
+        if n <= 0:
+            return a[:0] if len(a) else b[:0]
+        vol_a, vol_b = ce.create_equal_power_crossfade(n, curve_shape='smooth')
+        if vol_a.ndim == 1:
+            vol_a = vol_a[:, np.newaxis]
+        if vol_b.ndim == 1:
+            vol_b = vol_b[:, np.newaxis]
+        return a[:n] * vol_a[:n] + b[:n] * vol_b[:n]
+
     def _diversify_selected_technique(self,
                                       selected_technique: Dict,
                                       context: Dict) -> Tuple[Dict, Optional[str]]:

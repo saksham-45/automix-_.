@@ -54,6 +54,7 @@ class SmartQueue:
             
             # BPM
             tempo, _ = librosa.beat.beat_track(y=y, sr=self.sr)
+            tempo = float(np.atleast_1d(tempo)[0])  # librosa>=0.10 returns array
             # Handle both array and scalar tempo from different librosa versions
             bpm = float(tempo[0]) if isinstance(tempo, (np.ndarray, list)) else float(tempo)
             

@@ -465,6 +465,7 @@ class TransitionAnalyzer:
             sr=self.sr,
             hop_length=self.hop_length
         )
+        tempo = float(np.atleast_1d(tempo)[0])  # librosa>=0.10 returns array
         
         # Estimate phase offset (simplified)
         beat_times = librosa.frames_to_time(beats, sr=self.sr, hop_length=self.hop_length)

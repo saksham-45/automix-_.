@@ -91,6 +91,7 @@ class SmartTransitionFinder:
         
         # Analyze structure
         tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, hop_length=self.hop_length)
+        tempo = float(np.atleast_1d(tempo)[0])  # librosa>=0.10 returns array
         beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=self.hop_length)
         
         # Extract energy curve
@@ -452,6 +453,7 @@ class SmartTransitionFinder:
     def _get_tempo(self, y: np.ndarray, sr: int) -> float:
         """Extract tempo from audio."""
         tempo, _ = librosa.beat.beat_track(y=y, sr=sr, hop_length=self.hop_length)
+        tempo = float(np.atleast_1d(tempo)[0])  # librosa>=0.10 returns array
         return float(tempo)
     
     def _get_key(self, analysis: Optional[Dict]) -> Optional[str]:

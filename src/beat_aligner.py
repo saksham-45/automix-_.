@@ -38,7 +38,9 @@ class BeatAligner:
         """
         # Get beat positions for both songs
         tempo_a, beats_a = librosa.beat.beat_track(y=y_a, sr=sr, hop_length=self.hop_length)
+        tempo_a = float(np.atleast_1d(tempo_a)[0])  # librosa>=0.10 returns array
         tempo_b, beats_b = librosa.beat.beat_track(y=y_b, sr=sr, hop_length=self.hop_length)
+        tempo_b = float(np.atleast_1d(tempo_b)[0])  # librosa>=0.10 returns array
         
         beat_times_a = librosa.frames_to_time(beats_a, sr=sr, hop_length=self.hop_length)
         beat_times_b = librosa.frames_to_time(beats_b, sr=sr, hop_length=self.hop_length)
@@ -92,6 +94,7 @@ class BeatAligner:
             (beat_times, tempo) - Beat positions in seconds and tempo
         """
         tempo, beats = librosa.beat.beat_track(y=y, sr=sr, hop_length=self.hop_length)
+        tempo = float(np.atleast_1d(tempo)[0])  # librosa>=0.10 returns array
         beat_times = librosa.frames_to_time(beats, sr=sr, hop_length=self.hop_length)
         return beat_times, float(tempo)
 

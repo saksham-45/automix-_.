@@ -100,7 +100,7 @@ class DynamicProcessor:
             energy_b = np.mean(S_b[band_mask, :] ** 2)
             
             # Clash score (normalized)
-            clash = (energy_a * energy_b) / (np.max(energy_a, energy_b) + 1e-10)
+            clash = (energy_a * energy_b) / (np.maximum(energy_a, energy_b) + 1e-10)
             band_clashes[band_name] = float(clash)
         
         return band_clashes

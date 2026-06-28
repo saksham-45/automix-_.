@@ -73,6 +73,7 @@ class AdvancedBeatMatcher:
             y=y, sr=self.sr, hop_length=self.hop_length,
             units='time', start_bpm=120
         )
+        tempo = float(np.atleast_1d(tempo)[0])  # librosa>=0.10 returns array
         
         beat_times = np.array(beats)
         
@@ -213,10 +214,13 @@ class AdvancedBeatMatcher:
             if len(seg_a) == len(seg_b):
                 correlation = np.correlate(seg_a, seg_b, mode='full')
                 max_corr_idx = np.argmax(correlation) - len(seg_a) + 1
-                
-                # Adjust point_b by correlation offset
+
+                # Adjust point_b by correlation offset.
+                # max_corr_idx is the lag of A relative to B, so B must move by the
+                # NEGATIVE of it to align (verified empirically). Adding it (the old
+                # behaviour) doubled the misalignment / maximized comb-filtering.
                 offset_sec = max_corr_idx / self.sr
-                aligned_b = aligned_b + offset_sec
+                aligned_b = aligned_b - offset_sec
         
         return aligned_a, aligned_b
 

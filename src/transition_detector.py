@@ -124,6 +124,7 @@ class TransitionDetector:
         tempo, beat_frames = librosa.beat.beat_track(
             y=y, sr=sr, hop_length=self.hop_length
         )
+        tempo = float(np.atleast_1d(tempo)[0])  # librosa>=0.10 returns array
         
         beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=self.hop_length)
         beat_samples = librosa.frames_to_samples(beat_frames, hop_length=self.hop_length)
@@ -611,6 +612,7 @@ class TransitionDetector:
             sr=sr,
             hop_length=self.hop_length
         )
+        tempo = float(np.atleast_1d(tempo)[0])  # librosa>=0.10 returns array
         
         beat_times = librosa.frames_to_time(beats, sr=sr, hop_length=self.hop_length)
         

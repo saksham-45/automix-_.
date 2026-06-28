@@ -65,6 +65,7 @@ class StructureAnalyzer:
         # Detect tempo and beats first
         beat_start = time.time()
         tempo, beats = librosa.beat.beat_track(y=y, sr=self.sr, hop_length=self.hop_length)
+        tempo = float(np.atleast_1d(tempo)[0])  # librosa>=0.10 returns array
         
         beat_times = librosa.frames_to_time(beats, sr=self.sr, hop_length=self.hop_length)
         

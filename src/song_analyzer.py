@@ -108,6 +108,7 @@ class SongAnalyzer:
         
         # Overall tempo
         tempo, beats = librosa.beat.beat_track(y=y, sr=sr, hop_length=self.hop_length)
+        tempo = float(np.atleast_1d(tempo)[0])  # librosa>=0.10 returns array
         
         # Beat positions
         beat_times = librosa.frames_to_time(beats, sr=sr, hop_length=self.hop_length)
@@ -130,6 +131,7 @@ class SongAnalyzer:
             segment = y[int(start * sr):int((start + window_sec) * sr)]
             if len(segment) > 0:
                 seg_tempo, _ = librosa.beat.beat_track(y=segment, sr=sr)
+                seg_tempo = float(np.atleast_1d(seg_tempo)[0])  # librosa>=0.10 returns array
                 tempo_curve.append(float(seg_tempo))
                 times_sec.append(start)
         
