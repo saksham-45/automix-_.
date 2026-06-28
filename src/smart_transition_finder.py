@@ -187,10 +187,12 @@ class SmartTransitionFinder:
                 activity_variance = np.var(window_energies) if len(window_energies) > 1 else 0
                 if energy_after > energy_before * 1.2:
                     trend = 'rising'
+                elif energy_after < energy_before * 0.6:
+                    # Test the stricter threshold first; otherwise 'falling' (<0.8x)
+                    # always caught these and 'dip' was unreachable dead code.
+                    trend = 'dip'
                 elif energy_after < energy_before * 0.8:
                     trend = 'falling'
-                elif energy_after < energy_before * 0.6:
-                    trend = 'dip'
                 else:
                     trend = 'stable'
             else:

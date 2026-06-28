@@ -120,13 +120,19 @@ class StemSeparator:
             
         except Exception as e:
             print(f"  ⚠ Stem separation failed: {e}")
-            print(f"  → Falling back to original audio")
-            # Return original audio split equally (fallback)
+            print(f"  → Falling back to original audio as a single 'other' stem")
+            # Put the whole mix in ONE stem and zero the rest. The previous fallback
+            # returned scaled copies of the FULL mix in every stem, so vocals/drums
+            # still played at full strength inside the other copies -> a quadruple-
+            # layered, comb-filtered mess, and per-stem muting did nothing. Keeping
+            # the mix in 'other' (which is never specially faded) makes downstream
+            # curves behave like a plain crossfade.
+            zeros = np.zeros_like(audio)
             return {
-                'drums': audio * 0.3,
-                'bass': audio * 0.2,
-                'other': audio * 0.4,
-                'vocals': audio * 0.1
+                'drums': zeros.copy(),
+                'bass': zeros.copy(),
+                'other': audio.copy(),
+                'vocals': zeros.copy(),
             }
     
     def separate_segment(self, 

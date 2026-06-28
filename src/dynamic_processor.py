@@ -147,17 +147,16 @@ class DynamicProcessor:
         else:
             gain = eq_curve
         
-        # Convert gain (0-1) to dB
-        gain_db = 20 * np.log10(gain + 1e-10)
-        
-        # Apply gain
-        y_processed = y.copy()
+        # gain (0-1) = how much of the band to KEEP.
         if y.ndim > 1:
             gain = gain[:, np.newaxis]
-        
-        # Mix original and filtered
-        y_processed = y * (1 - gain) + y_filtered * gain
-        
+
+        # band_component = the band being controlled (= y - bandstop result).
+        # gain=1 -> keep band fully (y); gain=0 -> band removed (y_filtered).
+        # The old mix (y*(1-gain) + y_filtered*gain) was inverted, and the dB
+        # conversion was computed and discarded.
+        y_processed = y * gain + y_filtered * (1 - gain)
+
         return y_processed
     
     def create_bass_swap_automation(self,
@@ -237,7 +236,11 @@ class DynamicProcessor:
         y_a_processed = y_a_processed - y_a_bass * (1 - bass_gain_a)  # Remove bass
         
         y_b_processed = y_b[:n_samples].copy()
-        y_b_processed = y_b_processed - y_b_bass * (1 - bass_gain_b) + y_b_bass * bass_gain_b  # Add bass
+        # Scale the incoming bass band to bass_gain_b. The old form
+        #   y_b - y_b_bass*(1-g) + y_b_bass*g  ==  y_b + (2g-1)*y_b_bass
+        # DOUBLED the bass at g=1 (+6 dB) and did nothing at g=0.5. Match the
+        # outgoing-side formula so g is a true band gain.
+        y_b_processed = y_b_processed - y_b_bass * (1 - bass_gain_b)  # Restore bass to gain
         
         return y_a_processed, y_b_processed
     

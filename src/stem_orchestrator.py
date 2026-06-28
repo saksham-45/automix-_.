@@ -208,9 +208,12 @@ class StemOrchestrator:
                 
                 phrase_idx += 1
             
-            # Smooth transitions
-            curve_a = gaussian_filter1d(curve_a, sigma=int(0.1 * self.sr))
-            curve_b = gaussian_filter1d(curve_b, sigma=int(0.1 * self.sr))
+            # Smooth transitions. 100ms sigma (0.1*sr) blurred the 1.0<->0.15 phrase
+            # edges across ~±300ms, bleeding phrases into each other; ~15ms de-clicks
+            # without destroying the phrase boundaries.
+            _sig = int(0.015 * self.sr)
+            curve_a = gaussian_filter1d(curve_a, sigma=_sig)
+            curve_b = gaussian_filter1d(curve_b, sigma=_sig)
             
             curves[stem] = {
                 'a': curve_a.tolist(),
@@ -1184,10 +1187,14 @@ class StemOrchestrator:
                     elif bed_src == 'b':
                         curve_a *= 0.3
 
-            # Mix at level: equal-power curves so combined level stays constant (no dip)
+            # Mix at level: equal-power normalize ONLY where both sources are
+            # genuinely active (the crossfade overlap). Normalizing everywhere
+            # boosted a lone curve up to 1.0, erasing intentional ducks (e.g. the
+            # 0.15 call-response bed) and role-plan mutes (curve=0 -> 1.0).
             if mix_at_level:
                 power = np.sqrt(np.square(curve_a) + np.square(curve_b) + 1e-12)
-                scale = np.where(power > 1e-8, 1.0 / power, 1.0)
+                both_active = (curve_a > 0.05) & (curve_b > 0.05)
+                scale = np.where(both_active & (power > 1e-8), 1.0 / power, 1.0)
                 curve_a = curve_a * scale
                 curve_b = curve_b * scale
 

@@ -136,8 +136,11 @@ class MicroTimingEngine:
         eighth_note = beat_duration / 2
         threshold = eighth_note * 0.3
         
+        # A swung "long" 8th ranges from straight (0.5*beat) up to ~triplet
+        # (0.667*beat). The old upper bound (eighth+threshold = 0.65*beat) excluded
+        # genuine triplet swing, so swing was effectively never detected.
         short_diffs = diffs[diffs < eighth_note - threshold]
-        long_diffs = diffs[(diffs >= eighth_note - threshold) & (diffs < eighth_note + threshold)]
+        long_diffs = diffs[(diffs >= eighth_note - threshold) & (diffs < beat_duration * 0.72)]
         
         if len(long_diffs) == 0:
             return 0.5

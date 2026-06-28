@@ -285,7 +285,9 @@ class PsychoacousticAnalyzer:
             'spectral_centroid_hz': float(avg_centroid),
             'onset_rate_per_sec': float(onset_rate),
             'spectral_contrast': float(avg_contrast),
-            'foreground_prominence': float(avg_contrast / 1000)  # Normalized estimate
+            # contrast is in dB (~8-25); /1000 pinned this near 0. Normalize vs a
+            # realistic dB span.
+            'foreground_prominence': float(np.clip(avg_contrast / 40.0, 0.0, 1.0))
         }
     
     def predict_frequency_clash(self,

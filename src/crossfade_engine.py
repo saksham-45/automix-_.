@@ -40,9 +40,11 @@ class CrossfadeEngine:
             fade_in = np.sqrt(0.5 * (1 - np.cos(np.pi * t)))
         
         elif curve_shape == 'fast':
-            # Faster fade (more aggressive)
-            fade_out = np.sqrt((1 - t) ** 2)
-            fade_in = np.sqrt(t ** 2)
+            # Faster (steeper) but still EQUAL POWER: keep fade_out^2 + fade_in^2 == 1.
+            # The old version was sqrt((1-t)^2)=1-t and sqrt(t^2)=t, i.e. LINEAR gains,
+            # which sum to power 0.5 at the midpoint -> an audible ~3 dB dip.
+            fade_out = (1 - t) ** 2
+            fade_in = np.sqrt(np.clip(1.0 - fade_out ** 2, 0.0, 1.0))
         
         else:  # 'smooth' default
             fade_out = np.sqrt(0.5 * (1 + np.cos(np.pi * t)))
