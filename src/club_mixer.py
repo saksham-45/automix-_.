@@ -238,6 +238,65 @@ def _render_overlap(seg_a: np.ndarray, seg_b: np.ndarray, plan: "TransitionPlan"
     return lows + mids_highs
 
 
+# ----------------------------------------------------------------------------- #
+# Stem-aware overlap (uses demucs) — surgically clean handoffs
+# ----------------------------------------------------------------------------- #
+_SEP = None
+
+
+def _get_separator():
+    """Lazy, shared StemSeparator (cached separation, MPS/CUDA-auto)."""
+    global _SEP
+    if _SEP is None:
+        from src.stem_separator import StemSeparator
+        _SEP = StemSeparator()
+    return _SEP
+
+
+def _swap_gates(N: int, s2: int, sw: int) -> Tuple[np.ndarray, np.ndarray]:
+    """Equal-power swap gates centred on the switch sample s2 over ~sw samples."""
+    x = np.clip((np.arange(N) - (s2 - sw / 2)) / sw, 0.0, 1.0)
+    return np.sqrt(0.5 * (1 + np.cos(np.pi * x))), np.sqrt(0.5 * (1 - np.cos(np.pi * x)))
+
+
+def _render_overlap_stems(seg_a: np.ndarray, seg_b: np.ndarray,
+                          plan: "TransitionPlan", sr: int) -> np.ndarray:
+    """Stem-aware blend (demucs). Cleaner than the EQ filter because each element
+    is handled on its own separated stem — no filter bleed, no two-kick mud, and
+    explicit vocal-clash avoidance:
+
+      drums  : beat-locked swap on the t2 downbeat (A kit out, B kit in) — one kit at a time
+      bass   : same swap (constant low-end power, no sub stacking)
+      other  : equal-power crossfade across the whole overlap (melodic glue)
+      vocals : A vocal gone by the switch, B vocal only after — never two leads at full
+
+    Falls back to the EQ overlap if separation is unavailable.
+    """
+    try:
+        sep = _get_separator()
+        sa = sep.separate_stems(seg_a, sr)
+        sb = sep.separate_stems(seg_b, sr)
+    except Exception as e:
+        print(f"  ⚠ stem blend unavailable ({e}); using EQ overlap")
+        return _render_overlap(seg_a, seg_b, plan, sr)
+
+    N = len(seg_a)
+    bar_samp = int(round(plan.bar_dur * sr))
+    s2 = int(round((plan.blend_bars / 2.0) * bar_samp))
+    sw = max(1, bar_samp)
+    gA, gB = _swap_gates(N, s2, sw)          # 1->0 , 0->1 across the switch
+    volA, volB = _equal_power(N)
+
+    def st(d, k):
+        return _fit_len(_as_stereo(d.get(k, np.zeros((N, 2), dtype=np.float32))), N)
+
+    drums = _apply_gain(st(sa, 'drums'), gA) + _apply_gain(st(sb, 'drums'), gB)
+    bass = _apply_gain(st(sa, 'bass'), gA) + _apply_gain(st(sb, 'bass'), gB)
+    other = _apply_gain(st(sa, 'other'), volA) + _apply_gain(st(sb, 'other'), volB)
+    vocals = _apply_gain(st(sa, 'vocals'), gA) + _apply_gain(st(sb, 'vocals'), gB)
+    return drums + bass + other + vocals
+
+
 def _time_stretch(y_mono: np.ndarray, rate: float) -> np.ndarray:
     if abs(1.0 - rate) < 1e-3:
         return y_mono
@@ -282,7 +341,8 @@ def render_club_mix(y_a: np.ndarray,
                     blend_bars: int = 16,
                     context_bars: int = 8,
                     phrase_bars: int = 8,
-                    recent_types: Optional[list] = None) -> Tuple[np.ndarray, Dict]:
+                    recent_types: Optional[list] = None,
+                    use_stems: bool = False) -> Tuple[np.ndarray, Dict]:
     """Render a Boiler-Room–style long blend of A→B. Returns (stereo_audio, plan_info)."""
     grid_a = build_phrase_grid(y_a, sr, phrase_bars=phrase_bars)
     grid_b = build_phrase_grid(y_b, sr, phrase_bars=phrase_bars)
@@ -312,7 +372,7 @@ def render_club_mix(y_a: np.ndarray,
 
     # Loudness-match B to A across the overlap, then render the 4-state blend.
     seg_b = _match_loudness(seg_a, seg_b, sr)
-    overlap = _render_overlap(seg_a, seg_b, plan, sr)
+    overlap = (_render_overlap_stems if use_stems else _render_overlap)(seg_a, seg_b, plan, sr)
 
     # --- Context (lead-in from A, lead-out from B). ---
     ctx = int(round(context_bars * plan.bar_dur * sr))
@@ -359,7 +419,8 @@ def build_continuous_set(tracks,
                          sr: int = 44100,
                          blend_bars: int = 16,
                          phrase_bars: int = 8,
-                         progress=None) -> Tuple[np.ndarray, list]:
+                         progress=None,
+                         use_stems: bool = False) -> Tuple[np.ndarray, list]:
     """Chain N tracks into ONE continuous, gapless, club-mixed timeline (a DJ set):
 
         [track0 body → t1] [0→1 blend] [track1 body → t1] [1→2 blend] ... [last body]
@@ -417,7 +478,7 @@ def build_continuous_set(tracks,
         b_in = int(round(plan.b_in_sec * sr))
         seg_b = _fit_len(nxt[b_in:b_in + N], N)
         seg_b = _match_loudness(seg_a, seg_b, sr)
-        overlap = _render_overlap(seg_a, seg_b, plan, sr)
+        overlap = (_render_overlap_stems if use_stems else _render_overlap)(seg_a, seg_b, plan, sr)
         timeline.append(overlap)
         markers.append({"type": "transition", "from": i, "to": i + 1,
                         "transition_type": plan.transition_type,

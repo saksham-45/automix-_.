@@ -48,6 +48,7 @@
         <input id="bars" type="range" min="8" max="32" step="8" value="16"/>
         <span id="barsval">16</span> bars
       </div>
+      <label class="bars" style="margin:0"><input id="stems" type="checkbox" checked/> demucs stems (cleaner, slower)</label>
       <button id="go">Mix &amp; Play</button>
       <button id="sample" class="ghost" title="Use bundled audio (no download)">Try sample</button>
     </div>
@@ -123,9 +124,9 @@ function showPlayer(j) {
 $("#go").onclick = () => {
   const url = $("#url").value.trim();
   if (!url) { $("#status").textContent = "enter a playlist URL (or Try sample)"; return; }
-  start({url, blend_bars:+$("#bars").value});
+  start({url, blend_bars:+$("#bars").value, use_stems:$("#stems").checked});
 };
-$("#sample").onclick = () => start({files:["__SAMPLE__"], blend_bars:+$("#bars").value});
+$("#sample").onclick = () => start({files:["__SAMPLE__"], blend_bars:+$("#bars").value, use_stems:$("#stems").checked});
 </script>
 </body>
 </html>

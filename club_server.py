@@ -88,7 +88,7 @@ def _download(url: str) -> str:
     return str(dst)
 
 
-def _produce(sid: str, sources, is_playlist: bool, blend_bars: int):
+def _produce(sid: str, sources, is_playlist: bool, blend_bars: int, use_stems: bool = True):
     s = SESSIONS[sid]
     try:
         # Bundled-sample shortcut (no network): slice a few demo tracks.
@@ -105,7 +105,7 @@ def _produce(sid: str, sources, is_playlist: bool, blend_bars: int):
                 raise RuntimeError("no sample audio found")
             s["status"] = "mixing"
             mixed, markers = build_continuous_set(
-                tracks, sr=SR, blend_bars=blend_bars,
+                tracks, sr=SR, blend_bars=blend_bars, use_stems=use_stems,
                 progress=lambda i, n: s.update(status=f"mixing {i}/{n}"))
             out = CACHE_DIR / f"set_{sid}.wav"
             sf.write(out, mixed, SR)
@@ -136,7 +136,8 @@ def _produce(sid: str, sources, is_playlist: bool, blend_bars: int):
         def _prog(i, n):
             s["status"] = f"mixing {i}/{n}"
         s["status"] = "mixing"
-        mixed, markers = build_continuous_set(tracks, sr=SR, blend_bars=blend_bars, progress=_prog)
+        mixed, markers = build_continuous_set(tracks, sr=SR, blend_bars=blend_bars,
+                                              use_stems=use_stems, progress=_prog)
 
         out = CACHE_DIR / f"set_{sid}.wav"
         sf.write(out, mixed, SR)
@@ -161,12 +162,13 @@ def start():
     url = (data.get("url") or "").strip()
     files = data.get("files") or []
     blend_bars = int(data.get("blend_bars", 16))
+    use_stems = bool(data.get("use_stems", True))
     if not url and not files:
         return jsonify({"error": "provide a playlist url or files[]"}), 400
     sid = uuid.uuid4().hex[:12]
     SESSIONS[sid] = {"status": "starting"}
     threading.Thread(
-        target=_produce, args=(sid, url or files, bool(url), blend_bars), daemon=True
+        target=_produce, args=(sid, url or files, bool(url), blend_bars, use_stems), daemon=True
     ).start()
     return jsonify({"session_id": sid})
 
