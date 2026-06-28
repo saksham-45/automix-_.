@@ -239,29 +239,46 @@ class MusicDatabase:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        # Camelot wheel compatibility
-        camelot_num = int(camelot[0]) if camelot and camelot[0].isdigit() else None
+        # Camelot wheel compatibility. Parse the FULL number (e.g. '12A' -> 12,
+        # not '1') and tolerate junk.
+        camelot_num = None
+        camelot_letter = None
+        if camelot and len(camelot) >= 2 and camelot[:-1].isdigit():
+            camelot_num = int(camelot[:-1])
+            camelot_letter = camelot[-1]
         compatible_camelots = []
-        if camelot_num:
+        if camelot_num is not None:
             compatible_camelots = [
-                f"{camelot_num}{camelot[1]}",  # Same
-                f"{(camelot_num % 12) + 1}{camelot[1]}",  # +1
-                f"{((camelot_num - 2) % 12) + 1}{camelot[1]}",  # -1
-                f"{camelot_num}{'B' if camelot[1] == 'A' else 'A'}"  # Relative major/minor
+                f"{camelot_num}{camelot_letter}",  # Same
+                f"{(camelot_num % 12) + 1}{camelot_letter}",  # +1
+                f"{((camelot_num - 2) % 12) + 1}{camelot_letter}",  # -1
+                f"{camelot_num}{'B' if camelot_letter == 'A' else 'A'}"  # Relative major/minor
             ]
-        
-        cursor.execute("""
-            SELECT * FROM songs
-            WHERE bpm BETWEEN ? AND ?
-            AND (camelot IN ({}) OR key = ?)
-            AND energy_mean BETWEEN ? AND ?
-            ORDER BY ABS(bpm - ?) ASC
-            LIMIT ?
-        """.format(','.join(['?'] * len(compatible_camelots))), 
-        [bpm * 0.94, bpm * 1.06] + compatible_camelots + [key, energy - 0.2, energy + 0.2, bpm, limit])
-        
-        results = [dict(row) for row in cursor.fetchall()]
-        conn.close()
+
+        try:
+            if compatible_camelots:
+                # 'camelot IN ()' (empty list) is invalid SQL -> OperationalError.
+                in_clause = ','.join(['?'] * len(compatible_camelots))
+                cursor.execute(f"""
+                    SELECT * FROM songs
+                    WHERE bpm BETWEEN ? AND ?
+                    AND (camelot IN ({in_clause}) OR key = ?)
+                    AND energy_mean BETWEEN ? AND ?
+                    ORDER BY ABS(bpm - ?) ASC
+                    LIMIT ?
+                """, [bpm * 0.94, bpm * 1.06] + compatible_camelots + [key, energy - 0.2, energy + 0.2, bpm, limit])
+            else:
+                cursor.execute("""
+                    SELECT * FROM songs
+                    WHERE bpm BETWEEN ? AND ?
+                    AND key = ?
+                    AND energy_mean BETWEEN ? AND ?
+                    ORDER BY ABS(bpm - ?) ASC
+                    LIMIT ?
+                """, [bpm * 0.94, bpm * 1.06, key, energy - 0.2, energy + 0.2, bpm, limit])
+            results = [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
         return results
     
     def query_transitions_by_technique(self, technique: str, limit: int = 100) -> List[Dict]:

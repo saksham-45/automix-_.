@@ -254,9 +254,13 @@ class StreamSession:
 
                 # Mix
                 try:
-                    # Save temp snippets for mixer
-                    p_a = CACHE_DIR / "temp_a.wav"
-                    p_b = CACHE_DIR / "temp_b.wav"
+                    # Save temp snippets for mixer. Per-session AND per-iteration
+                    # names: the old fixed "temp_a.wav"/"temp_b.wav" were shared by
+                    # every concurrent StreamSession worker, so simultaneous streams
+                    # clobbered each other's snippets between write and read ->
+                    # transitions mixed from the wrong tracks / half-written files.
+                    p_a = CACHE_DIR / f"{self.id}_temp_a_{i}.wav"
+                    p_b = CACHE_DIR / f"{self.id}_temp_b_{i}.wav"
                     sf.write(p_a, snippet_a, SR)
                     sf.write(p_b, snippet_b, SR)
                     
@@ -295,6 +299,14 @@ class StreamSession:
                     mixed, a_transition_start_in_snippet, b_resume_offset_samples = self._build_fallback_transition(
                         snippet_a, snippet_b
                     )
+                finally:
+                    # Best-effort cleanup of the per-iteration mixer snippets.
+                    for _p in (locals().get('p_a'), locals().get('p_b')):
+                        try:
+                            if _p is not None and _p.exists():
+                                _p.unlink()
+                        except Exception:
+                            pass
 
                 # --- Produce "Main Body" of Current Song ---
                 # End body exactly where transition content starts in Song A.
