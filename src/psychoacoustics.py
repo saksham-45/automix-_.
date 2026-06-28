@@ -280,37 +280,18 @@ class PsychoacousticAnalyzer:
             Dict with clash prediction and recommendations
         """
         import time, json
-        log_path = '/Users/saksham/untitled folder 7/.cursor/debug.log'
         
-        #region agent log
-        clash_start = time.time()
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"psychoacoustics.py:186","message":"predict_frequency_clash start","data":{"y_a_len":len(y_a),"y_b_len":len(y_b)},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
         
         # Use samples if audio is too long (for speed) - already sampled in caller
         # No need to sample again here
         
-        #region agent log
-        mask_start = time.time()
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"psychoacoustics.py:197","message":"Starting masking analysis","data":{"y_a_len":len(y_a),"y_b_len":len(y_b)},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
         
         # Analyze masking for both signals
         mask_a = self.analyze_frequency_masking(y_a)
         
-        #region agent log
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"psychoacoustics.py:203","message":"Mask A complete","data":{"time_sec":time.time()-mask_start},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
         
         mask_b = self.analyze_frequency_masking(y_b)
         
-        #region agent log
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"psychoacoustics.py:207","message":"Mask B complete","data":{"time_sec":time.time()-mask_start},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
         
         # Calculate mutual masking
         S_a = np.abs(librosa.stft(y_a, n_fft=self.n_fft, hop_length=self.hop_length))
@@ -357,11 +338,6 @@ class PsychoacousticAnalyzer:
         if bass_clash > 0.4:
             recommendations.append('Bass frequencies clashing - perform bass swap')
         
-        #region agent log
-        clash_total = time.time() - clash_start
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"psychoacoustics.py:349","message":"predict_frequency_clash complete","data":{"total_time_sec":clash_total},"timestamp":int(time.time()*1000)}) + '\n')
-        #endregion
         
         return {
             'clash_score': float(clash_score),  # 0-1, higher = more clash

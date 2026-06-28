@@ -7,59 +7,21 @@ import sys
 import time
 from pathlib import Path
 
-#region agent log
-import os
-log_path = '/Users/saksham/untitled folder 7/.cursor/debug.log'
-os.makedirs(os.path.dirname(log_path), exist_ok=True)
-try:
-    with open(log_path, 'a') as f:
-        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"ALL","location":"create_mix.py:11","message":"Script start","data":{},"timestamp":int(time.time()*1000)}) + '\n')
-except Exception as e:
-    print(f"DEBUG LOG ERROR: {e}")
-#endregion
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-#region agent log
-import_start = time.time()
-try:
-    with open(log_path, 'a') as f:
-        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"ALL","location":"create_mix.py:17","message":"Before SmartMixer import","data":{},"timestamp":int(time.time()*1000)}) + '\n')
-except: pass
-#endregion
 
 from src.smart_mixer import SmartMixer
 
-#region agent log
-import_time = time.time() - import_start
-try:
-    with open(log_path, 'a') as f:
-        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"ALL","location":"create_mix.py:23","message":"SmartMixer imported","data":{"time_sec":import_time},"timestamp":int(time.time()*1000)}) + '\n')
-except: pass
-#endregion
 
 print("="*60)
 print("SMART SONG MIXER")
 print("="*60)
 
 # Initialize smart mixer
-#region agent log
-init_start = time.time()
-try:
-    with open(log_path, 'a') as f:
-        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"ALL","location":"create_mix.py:33","message":"Before SmartMixer() init","data":{},"timestamp":int(time.time()*1000)}) + '\n')
-except: pass
-#endregion
 
 mixer = SmartMixer()
 
-#region agent log
-init_time = time.time() - init_start
-try:
-    with open(log_path, 'a') as f:
-        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"ALL","location":"create_mix.py:37","message":"SmartMixer initialized","data":{"time_sec":init_time},"timestamp":int(time.time()*1000)}) + '\n')
-except: pass
-#endregion
 
 # Load AI transition data if available
 ai_data = None
@@ -75,13 +37,6 @@ except:
 # Create mix using smart transition finder
 print("\nFinding optimal transition points...")
 
-#region agent log
-mix_start = time.time()
-try:
-    with open(log_path, 'a') as f:
-        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"ALL","location":"create_mix.py:50","message":"Before create_smooth_mix call","data":{},"timestamp":int(time.time()*1000)}) + '\n')
-except: pass
-#endregion
 
 mixed_audio = mixer.create_smooth_mix(
     'temp_audio/song_a.wav',
@@ -90,13 +45,6 @@ mixed_audio = mixer.create_smooth_mix(
     ai_transition_data=ai_data
 )
 
-#region agent log
-mix_time = time.time() - mix_start
-try:
-    with open(log_path, 'a') as f:
-        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"ALL","location":"create_mix.py:60","message":"create_smooth_mix complete","data":{"time_sec":mix_time},"timestamp":int(time.time()*1000)}) + '\n')
-except: pass
-#endregion
 
 # Save with timestamp to avoid overwriting
 from datetime import datetime
