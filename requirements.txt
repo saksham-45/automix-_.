@@ -1,3 +1,5 @@
+# Base runtime — the stem-free club mixer + streaming server.
+# This is all that's needed to deploy the demo on a CPU box (no torch).
 flask==3.0.2
 librosa==0.10.1
 numpy==1.26.4
@@ -6,11 +8,10 @@ soundfile==0.12.1
 yt-dlp==2024.03.10
 tqdm==4.66.2
 
-# Optional (stems/demucs): install when GPU/stems needed
-# torch==2.2.1
-# torchaudio==2.2.1
-# einops==0.7.0
-# julius==0.2.7
-# openunmix==1.2.1
-# dora-search
-# pip install --no-deps 'git+https://github.com/adefossez/demucs.git'
+# Production server + abuse protection (gunicorn serves; limiter caps per-IP).
+gunicorn==21.2.0
+flask-limiter==3.5.1
+
+# Stem separation (demucs) is optional and heavy — see requirements-stems.txt.
+# The app runs fully without it (3-band EQ bass-swap transitions); installing it
+# only enables the "HQ transitions" toggle. The Dockerfile installs it by default.

@@ -1,0 +1,32 @@
+# Keep the build context tiny — the working tree is ~16 GB, almost all of it data.
+.git
+.venv
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+
+# Heavy data / audio (the demo loops are GENERATED at build time, not copied).
+data/
+mixes/
+temp_audio/
+models/
+*.wav
+*.mp3
+*.flac
+*.m4a
+*.aac
+*.ogg
+
+# Local-only / not needed in the image.
+.claude
+.env
+.env.local
+*.log
+legacy/
+scripts/
+examples/
+tests/
+.vscode/
+.idea/
+.DS_Store

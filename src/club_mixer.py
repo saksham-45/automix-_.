@@ -547,6 +547,19 @@ def _splice(parts, sr: int, xf_sec: float = 0.05) -> np.ndarray:
     return out
 
 
+def _resolve_track(t) -> np.ndarray:
+    """A track may be a raw audio array OR a zero-arg callable (lazy loader).
+
+    Lazy loaders let a caller stream tracks off disk one at a time instead of
+    holding the whole playlist decoded in RAM — the set engine only ever needs
+    the current track and the next one, so at most two are resident at once.
+    Returns a stereo float32 array.
+    """
+    if callable(t):
+        t = t()
+    return _as_stereo(np.asarray(t)).astype(np.float32)
+
+
 def build_continuous_set(tracks,
                          sr: int = 44100,
                          blend_bars: int = 16,
@@ -571,24 +584,29 @@ def build_continuous_set(tracks,
     # first piece while the rest renders). The timeline is sample-contiguous, so
     # parts concatenate gaplessly with no crossfade needed.
     _emit = on_part or (lambda p, m=None: None)
+    # When streaming (on_part given), each part is copied into the caller's buffer
+    # as it is produced, so there is no need to also accumulate the whole timeline
+    # in RAM and splice a full-set array we'd only throw away. Skip it: a 30-min
+    # set then never lives in memory all at once (the producer flushes to disk).
+    accumulate = on_part is None
 
     n = len(tracks)
     if n == 0:
         return np.zeros((0, 2), dtype=np.float32), []
-    cur = _as_stereo(np.asarray(tracks[0])).astype(np.float32)
+    cur = _resolve_track(tracks[0])
     if n == 1:
         out = _headroom(cur).astype(np.float32)
         m0 = {"type": "track", "index": 0, "start_sec": 0.0, "end_sec": len(out) / sr}
         _emit(out, m0)
         return out, [m0]
 
-    timeline = []          # stereo parts to splice
+    timeline = []          # stereo parts to splice (only when not streaming)
     markers = []
     resume = 0.0           # seconds into `cur` where its audible body should begin
     pos = 0.0              # running output position (seconds), approximate (pre-splice)
 
     for i in range(n - 1):
-        nxt = _as_stereo(np.asarray(tracks[i + 1])).astype(np.float32)
+        nxt = _resolve_track(tracks[i + 1])
         grid_a = build_phrase_grid(cur, sr, phrase_bars=phrase_bars)
         grid_b0 = build_phrase_grid(nxt, sr, phrase_bars=phrase_bars)
 
@@ -611,7 +629,9 @@ def build_continuous_set(tracks,
         body = cur[max(0, r0):max(r0, a_t1)]
         bmark = {"type": "track", "index": i,
                  "start_sec": pos, "end_sec": pos + len(body) / sr}
-        timeline.append(body); markers.append(bmark); _emit(body, bmark)
+        if accumulate:
+            timeline.append(body)
+        markers.append(bmark); _emit(body, bmark)
         pos += len(body) / sr
 
         # Overlap blend (loudness-matched, bass-swapped, phrase-locked).
@@ -623,7 +643,9 @@ def build_continuous_set(tracks,
         tmark = {"type": "transition", "from": i, "to": i + 1,
                  "transition_type": plan.transition_type,
                  "start_sec": pos, "end_sec": pos + len(overlap) / sr}
-        timeline.append(overlap); markers.append(tmark); _emit(overlap, tmark)
+        if accumulate:
+            timeline.append(overlap)
+        markers.append(tmark); _emit(overlap, tmark)
         pos += len(overlap) / sr
 
         # Next track becomes current; it resumes just after the overlap.
@@ -636,7 +658,12 @@ def build_continuous_set(tracks,
     tail = cur[int(round(resume * sr)):]
     tlmark = {"type": "track", "index": n - 1,
               "start_sec": pos, "end_sec": pos + len(tail) / sr}
-    timeline.append(tail); markers.append(tlmark); _emit(tail, tlmark)
+    if accumulate:
+        timeline.append(tail)
+    markers.append(tlmark); _emit(tail, tlmark)
 
-    final = _headroom(_splice(timeline, sr)).astype(np.float32)
-    return final, markers
+    if accumulate:
+        final = _headroom(_splice(timeline, sr)).astype(np.float32)
+        return final, markers
+    # Streaming mode: the full set was emitted part-by-part and never held in RAM.
+    return np.zeros((0, 2), dtype=np.float32), markers

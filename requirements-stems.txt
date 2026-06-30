@@ -1,0 +1,16 @@
+# Optional stem separation (demucs). Install ON TOP of requirements.txt.
+# demucs IS a PyTorch model — there is no demucs without torch. We pin the
+# CPU-only torch build (~200 MB vs ~800 MB for the CUDA build) so the image stays
+# small and runs on a free CPU box. Install with the CPU wheel index:
+#
+#   pip install -r requirements-stems.txt \
+#       --extra-index-url https://download.pytorch.org/whl/cpu
+#
+# demucs itself is installed --no-deps (its deps are listed here) to avoid it
+# dragging in a conflicting torch; see the Dockerfile for the exact sequence.
+torch==2.2.2
+torchaudio==2.2.2
+einops==0.7.0
+julius==0.2.7
+openunmix==1.2.1
+dora-search
