@@ -1,4 +1,4 @@
-# Deploying autmox (free, cloud)
+# Deploying automix (free, cloud)
 
 The app is a single Flask service that renders a continuous DJ set and streams it as
 it renders. It is packaged as a container (`Dockerfile`) that runs on any CPU box. The
@@ -19,7 +19,7 @@ recommended free home is a **Hugging Face Spaces "Docker" Space** (2 vCPU / 16 G
 1. Create a new **Space** → SDK: **Docker** → **Blank**.
 2. Push this repo to the Space's git remote (or connect the GitHub repo):
    ```bash
-   git remote add space https://huggingface.co/spaces/<you>/autmox
+   git remote add space https://huggingface.co/spaces/<you>/automix
    git push space HEAD:main
    ```
    The Space reads the YAML front-matter at the top of `README.md`
@@ -46,14 +46,14 @@ If you'd rather disable YouTube entirely (samples only), set a **variable**
 
 ```bash
 # Full image (includes demucs / CPU torch):
-docker build -t autmox .
+docker build -t automix .
 # Or a small, torch-free image (EQ transitions only, ~5x smaller):
-docker build -t autmox-slim --build-arg INSTALL_STEMS=false .
+docker build -t automix-slim --build-arg INSTALL_STEMS=false .
 
 docker run -p 7860:7860 \
   -e ALLOW_YOUTUBE=true \
   -e YT_COOKIES="$(cat cookies.txt)" \
-  autmox
+  automix
 # open http://localhost:7860
 ```
 

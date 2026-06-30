@@ -1,5 +1,5 @@
 ---
-title: autmox — AI DJ Auto-Mixer
+title: automix — AI DJ Auto-Mixer
 emoji: 🎛️
 colorFrom: purple
 colorTo: indigo
@@ -10,10 +10,10 @@ license: mit
 short_description: Research demo — beat-matched, gapless club DJ sets from a playlist
 ---
 
-# autmox — Automatic DJ Mixing (research project)
+# automix — Automatic DJ Mixing (research project)
 
 **A research prototype for automatic, beat-/phrase-aware DJ transitions.** Given a
-set of tracks, autmox renders **one continuous, gapless, club-style mix** in which
+set of tracks, automix renders **one continuous, gapless, club-style mix** in which
 each consecutive pair is tempo-matched, phrase-locked, loudness-matched and
 bass-swapped on a downbeat — the moves a human DJ makes, derived from the MIR
 literature rather than hand-tuned rules.
