@@ -23,22 +23,18 @@ wheels/
 .installed.cfg
 *.egg
 
-# Audio files (not stored in repo; data/old_mixes and data/demo allowed)
+# Audio files are never stored in the repo (copyright + size). The demo loops are
+# synthesized at build/run time by src/demo_samples.py; nothing here needs committing.
 *.wav
-!data/old_mixes/*.wav
-!data/demo/*.wav
+mixes/
 *.mp3
 *.flac
 *.m4a
 *.aac
 *.ogg
 
-# Data directories (allow demo and old_mixes for GitHub)
+# Data directories are local-only (mixes, caches, generated demo audio).
 data/
-!data/old_mixes/
-!data/old_mixes/*.wav
-!data/demo/
-!data/demo/*.wav
 database/*.db
 database/*.db-journal
 
