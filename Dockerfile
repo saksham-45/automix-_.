@@ -1,9 +1,15 @@
 # syntax=docker/dockerfile:1
 # ---------------------------------------------------------------------------
-# autmox — Club AutoMixer. Designed to deploy on a free CPU box (e.g. a Hugging
-# Face Spaces "Docker" Space, 2 vCPU / 16 GB). Stem separation (demucs, on CPU-only
-# torch) is installed by default; build with --build-arg INSTALL_STEMS=false for a
-# small, torch-free image (the app then uses 3-band EQ transitions only).
+# automix — Club AutoMixer.
+#
+#   CPU  (free CPU box / HF Spaces Docker, 16 GB):   docker build .
+#   GPU  (paid GPU host / HF Spaces GPU hardware):   docker build --build-arg TORCH_VARIANT=cu121 .
+#   slim (no stems, no torch, ~5x smaller image):    docker build --build-arg INSTALL_STEMS=false .
+#
+# Stems = demucs = torch. GPU only accelerates the demucs step (transitions);
+# demucs auto-selects CUDA when a GPU is visible (src/utils.get_best_device).
+# The torch CUDA wheel bundles its own CUDA libs, so a plain python base works as
+# long as the host exposes an NVIDIA driver (HF GPU hardware / nvidia-container-runtime).
 # ---------------------------------------------------------------------------
 FROM python:3.12-slim
 
@@ -20,10 +26,12 @@ RUN pip install --no-cache-dir -r requirements.txt \
     # librosa imports pkg_resources at runtime; setuptools >=81 removed it.
     && pip install --no-cache-dir "setuptools<81"
 
+# TORCH_VARIANT: "cpu" (default, small, CPU-only) or "cu121" (CUDA 12.1 GPU build).
 ARG INSTALL_STEMS=true
+ARG TORCH_VARIANT=cpu
 RUN if [ "$INSTALL_STEMS" = "true" ]; then \
         pip install --no-cache-dir -r requirements-stems.txt \
-            --extra-index-url https://download.pytorch.org/whl/cpu && \
+            --extra-index-url "https://download.pytorch.org/whl/${TORCH_VARIANT}" && \
         pip install --no-cache-dir --no-deps \
             "git+https://github.com/adefossez/demucs.git" ; \
     fi
