@@ -13,9 +13,10 @@
 # ---------------------------------------------------------------------------
 FROM python:3.12-slim
 
-# System deps: ffmpeg (yt-dlp transcode), libsndfile (soundfile), git (demucs).
+# System deps: ffmpeg (yt-dlp transcode), libsndfile (soundfile), git (demucs),
+# libgomp1 (OpenMP runtime that torch's CPU build needs to import).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ffmpeg libsndfile1 git \
+        ffmpeg libsndfile1 git libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -33,12 +34,18 @@ RUN if [ "$INSTALL_STEMS" = "true" ]; then \
         pip install --no-cache-dir -r requirements-stems.txt \
             --extra-index-url "https://download.pytorch.org/whl/${TORCH_VARIANT}" && \
         pip install --no-cache-dir --no-deps \
-            "git+https://github.com/adefossez/demucs.git" ; \
+            "git+https://github.com/adefossez/demucs.git" && \
+        # a stems dep must not silently bump numpy to 2.x (breaks the numba/librosa ABI)
+        pip install --no-cache-dir "numpy==1.26.4" ; \
     fi
 
 # --- App code + non-root runtime user (Hugging Face Spaces runs as uid 1000) -
 RUN useradd -m -u 1000 user
 COPY --chown=user:user . /app
+# /app itself was created by WORKDIR as root; COPY --chown only owns the copied
+# files, not the dir. Give the whole tree to the runtime user so the build-time
+# demo step AND runtime writes (CACHE_DIR=/app/data/cache, chunk files) succeed.
+RUN mkdir -p /app/data && chown -R user:user /app
 USER user
 ENV HOME=/home/user \
     PATH=/home/user/.local/bin:$PATH \
@@ -46,7 +53,9 @@ ENV HOME=/home/user \
     PYTHONUNBUFFERED=1
 
 # Pre-generate the royalty-free demo loops into the image (idempotent at runtime).
-RUN python -m src.demo_samples data/demo
+# Run as a standalone script (NOT `python -m src...`) so it needs only numpy+soundfile
+# and never imports the heavy src package (torch/numba/demucs) during the build.
+RUN python src/demo_samples.py data/demo
 
 EXPOSE 7860
 ENTRYPOINT ["./docker-entrypoint.sh"]

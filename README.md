@@ -7,7 +7,7 @@ sdk: docker
 app_port: 7860
 pinned: false
 license: mit
-short_description: Research demo — beat-matched, gapless club DJ sets from a playlist
+short_description: Beat-matched, gapless DJ mixing — research demo
 ---
 
 # automix — Automatic DJ Mixing (research project)

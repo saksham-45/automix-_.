@@ -29,6 +29,9 @@ wheels/
 mixes/
 *.mp3
 *.flac
+# Model weights (not needed by the club mixer; demucs fetches its own; HF rejects raw binaries)
+*.pt
+*.pth
 *.m4a
 *.aac
 *.ogg
