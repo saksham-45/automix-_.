@@ -42,6 +42,10 @@ RUN if [ "$INSTALL_STEMS" = "true" ]; then \
 # --- App code + non-root runtime user (Hugging Face Spaces runs as uid 1000) -
 RUN useradd -m -u 1000 user
 COPY --chown=user:user . /app
+# /app itself was created by WORKDIR as root; COPY --chown only owns the copied
+# files, not the dir. Give the whole tree to the runtime user so the build-time
+# demo step AND runtime writes (CACHE_DIR=/app/data/cache, chunk files) succeed.
+RUN mkdir -p /app/data && chown -R user:user /app
 USER user
 ENV HOME=/home/user \
     PATH=/home/user/.local/bin:$PATH \
