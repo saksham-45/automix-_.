@@ -1,13 +1,64 @@
-# AI DJ Mixing System
+---
+title: automix — AI DJ Auto-Mixer
+emoji: 🎛️
+colorFrom: purple
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+license: mit
+short_description: Research demo — beat-matched, gapless club DJ sets from a playlist
+---
 
-A comprehensive, production-ready system for creating professional-quality DJ transitions between songs using AI models trained on expert DJ mixes.
+# automix — Automatic DJ Mixing (research project)
 
-## Demo
+**A research prototype for automatic, beat-/phrase-aware DJ transitions.** Given a
+set of tracks, automix renders **one continuous, gapless, club-style mix** in which
+each consecutive pair is tempo-matched, phrase-locked, loudness-matched and
+bass-swapped on a downbeat — the moves a human DJ makes, derived from the MIR
+literature rather than hand-tuned rules.
 
-**Latest AI-generated mix** (Feb 2026) — listen to a sample transition created by this system:
+> **Scope & framing.** This is an academic/educational prototype for studying
+> automatic mixing and music-information-retrieval (MIR) techniques. The public demo
+> ships **only royalty-free, synthesized audio**; no copyrighted material is
+> distributed. Optional YouTube ingestion is provided for local experimentation and
+> is the user's responsibility under YouTube's Terms of Service and applicable
+> copyright law.
 
-- [Latest mix: ai_dj_mix_20260201_193902.wav](data/demo/ai_dj_mix_20260201_193902.wav) — raw download
-- More mixes in [`data/old_mixes/`](data/old_mixes/) This system learns from real DJ transitions rather than using rule-based approaches, enabling it to create smooth, beat-matched, and musically intelligent mixes.
+### Method (grounded in the literature)
+
+- **Transition model** — a three-timestamp long blend (B audible → switch → A out)
+  with a four-state crossfade, after Vande Veire & De Bie (2018).
+- **Beat / downbeat / phrase grid** — onset-strength downbeat-phase estimation on an
+  8-bar grid; structural segmentation via a beat-synchronous self-similarity matrix
+  with Foote (2000) checkerboard novelty (Müller, *FMP*).
+- **Tempo lock** — time-stretch B to A's tempo, downbeat-aligned (cf. Zehren et al., 2022).
+- **Spectral handoff** — equal-power crossfade for mids/highs + a beat-locked 3-band
+  EQ **bass swap** that keeps low-end energy constant; optional **demucs** stem
+  separation for surgically clean drum/bass/vocal handoffs.
+- **Loudness** — K-weighted (LUFS) matching, output limited to −1 dBTP.
+
+### Live demo
+
+The web app streams the mix **as it renders** (progressive Web-Audio playback, no
+upfront wait). Click **Try sample** to mix three synthesized loops at 124/126/128 BPM
+and hear the tempo-matched, gapless transitions. See **[DEPLOY.md](DEPLOY.md)** for a
+one-file deploy to a free Hugging Face Spaces (Docker) Space.
+
+```bash
+# Run locally (CPU). Stems optional; the sample needs no network.
+pip install -r requirements.txt
+PORT=5005 python club_server.py     # then open http://localhost:5005
+```
+
+---
+
+## (Legacy) AI DJ Mixing System
+
+The sections below document the original learning-based pipeline (feature extraction,
+NN/LSTM transition models, the superhuman engine). The deployed demo above uses the
+self-contained, stem-optional **club mixer** (`src/club_mixer.py`); the learning
+models are not required to run it.
 
 ## Table of Contents
 

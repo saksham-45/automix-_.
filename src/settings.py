@@ -38,9 +38,27 @@ CACHE_DIR = Path(os.getenv("CACHE_DIR", BASE_DIR / "data" / "cache" / "stream"))
 TEMP_DIR = Path(os.getenv("TEMP_DIR", BASE_DIR / "temp_audio"))
 
 # Server
-PORT = _env_int("PORT", 5005)
+# PORT defaults to 7860 (Hugging Face Spaces' expected container port); override
+# locally with PORT=5005. HOST binds all interfaces so it works inside a container.
+PORT = _env_int("PORT", 7860)
 HOST = os.getenv("HOST", "0.0.0.0")
 
 # YouTube / network
 YTDLP_EXTRACTOR_ARGS = os.getenv("YTDLP_EXTRACTOR_ARGS", "youtube:player_client=android")
 DOWNLOAD_TIMEOUT_SEC = _env_int("DOWNLOAD_TIMEOUT_SEC", 120)
+# Optional Netscape-format cookies file for yt-dlp. Datacenter IPs (any cloud host)
+# are bot-throttled by YouTube; supplying your own cookies via this path is the
+# standard mitigation. On Hugging Face Spaces, store the file contents in a Secret
+# and write them to this path at startup. Empty => no cookies (samples still work).
+YT_COOKIES_FILE = os.getenv("YT_COOKIES_FILE", "").strip()
+
+# --- Abuse / resource caps (memory-efficiency + security) ------------------- #
+# Hard limits so a single request can't exhaust RAM, disk, CPU, or download
+# bandwidth on a small/free cloud box. All overridable via env.
+ALLOW_YOUTUBE = os.getenv("ALLOW_YOUTUBE", "true").lower() in ("1", "true", "yes")
+MAX_PLAYLIST_TRACKS = _env_int("MAX_PLAYLIST_TRACKS", 12)   # cap tracks per set
+PER_TRACK_CAP_SEC = _env_int("PER_TRACK_CAP_SEC", 150)      # seconds fetched per track
+MAX_DOWNLOAD_MB = _env_int("MAX_DOWNLOAD_MB", 60)           # yt-dlp --max-filesize
+SESSION_TTL_SEC = _env_int("SESSION_TTL_SEC", 1800)        # evict idle sessions after 30 min
+MAX_SESSIONS = _env_int("MAX_SESSIONS", 24)                # cap concurrent sessions
+RATE_LIMIT = os.getenv("RATE_LIMIT", "30 per hour")        # per-IP on the start endpoint

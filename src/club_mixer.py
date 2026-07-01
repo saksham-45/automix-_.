@@ -309,6 +309,24 @@ def _equal_power(n: int) -> Tuple[np.ndarray, np.ndarray]:
     return np.sqrt(0.5 * (1 + np.cos(np.pi * t))), np.sqrt(0.5 * (1 - np.cos(np.pi * t)))
 
 
+def _equal_power_fast(n: int) -> Tuple[np.ndarray, np.ndarray]:
+    """Steeper equal-power pair (punchier switch) — used for double-drop feel."""
+    t = np.linspace(0.0, 1.0, n)
+    fo = (1.0 - t) ** 2
+    fi = np.sqrt(np.clip(1.0 - fo ** 2, 0.0, 1.0))
+    return fo, fi
+
+
+def _lp_sweep_out(x: np.ndarray, sr: int, n: int, cutoff: float = 800.0) -> np.ndarray:
+    """Progressive low-pass 'filter out': crossfade x -> lowpass(x) over the window
+    so the outgoing material gets muffled as it leaves (classic relaxed-mix sweep)."""
+    sos = sig.butter(4, min(cutoff / (sr / 2.0), 0.99), btype='low', output='sos')
+    x_lp = sig.sosfiltfilt(sos, x, axis=0)
+    s = (1.0 - np.cos(np.pi * np.linspace(0.0, 1.0, n))) / 2.0   # 0 -> 1
+    s2 = s[:, None] if x.ndim == 2 else s
+    return x * (1.0 - s2) + x_lp * s2
+
+
 def _fit_len(seg: np.ndarray, n: int) -> np.ndarray:
     """Truncate or zero-pad a stereo segment to exactly n samples."""
     if len(seg) >= n:
@@ -323,16 +341,26 @@ def _render_overlap(seg_a: np.ndarray, seg_b: np.ndarray, plan: "TransitionPlan"
     seg_a/seg_b must already be the same length (= plan.overlap_samples)."""
     N = len(seg_a)
     bar_samp = int(round(plan.bar_dur * sr))
-    volA, volB = _equal_power(N)
+    ttype = getattr(plan, "transition_type", "rolling")
     low_a, mid_a, high_a = _band_split(seg_a, sr)
     low_b, mid_b, high_b = _band_split(seg_b, sr)
-    s2 = int(round((plan.blend_bars / 2.0) * bar_samp))   # switch (t2)
+    s2 = int(round((plan.blend_bars / 2.0) * bar_samp))   # switch (t2), on the downbeat
     sw = max(1, bar_samp)                                  # swap over ~1 bar, centered on t2
     x = np.clip((np.arange(N) - (s2 - sw / 2)) / sw, 0.0, 1.0)
     gA_low = np.sqrt(0.5 * (1 + np.cos(np.pi * x)))        # 1 -> 0
     gB_low = np.sqrt(0.5 * (1 - np.cos(np.pi * x)))        # 0 -> 1 (equal power)
+
+    # Volume curve + flavour vary by transition TYPE (previously every blend was
+    # identical — that's the "uncreative" feel). All variants keep the bass swap on
+    # the downbeat; they differ in how the mids/highs move.
+    volA, volB = (_equal_power_fast(N) if ttype == "double_drop" else _equal_power(N))
+    mh_a = mid_a + high_a
+    mh_b = mid_b + high_b
+    if ttype == "relaxed":
+        mh_a = _lp_sweep_out(mh_a, sr, N)                  # filter the outgoing track out
+
     lows = _apply_gain(low_a, gA_low) + _apply_gain(low_b, gB_low)
-    mids_highs = _apply_gain(mid_a + high_a, volA) + _apply_gain(mid_b + high_b, volB)
+    mids_highs = _apply_gain(mh_a, volA) + _apply_gain(mh_b, volB)
     return lows + mids_highs
 
 
@@ -380,18 +408,24 @@ def _render_overlap_stems(seg_a: np.ndarray, seg_b: np.ndarray,
 
     N = len(seg_a)
     bar_samp = int(round(plan.bar_dur * sr))
+    ttype = getattr(plan, "transition_type", "rolling")
     s2 = int(round((plan.blend_bars / 2.0) * bar_samp))
     sw = max(1, bar_samp)
     gA, gB = _swap_gates(N, s2, sw)          # 1->0 , 0->1 across the switch
-    volA, volB = _equal_power(N)
+    volA, volB = (_equal_power_fast(N) if ttype == "double_drop" else _equal_power(N))
 
     def st(d, k):
         return _fit_len(_as_stereo(d.get(k, np.zeros((N, 2), dtype=np.float32))), N)
 
+    other_a, voc_a = st(sa, 'other'), st(sa, 'vocals')
+    if ttype == "relaxed":                   # filter the outgoing melodic/vocal out
+        other_a = _lp_sweep_out(other_a, sr, N)
+        voc_a = _lp_sweep_out(voc_a, sr, N)
+
     drums = _apply_gain(st(sa, 'drums'), gA) + _apply_gain(st(sb, 'drums'), gB)
     bass = _apply_gain(st(sa, 'bass'), gA) + _apply_gain(st(sb, 'bass'), gB)
-    other = _apply_gain(st(sa, 'other'), volA) + _apply_gain(st(sb, 'other'), volB)
-    vocals = _apply_gain(st(sa, 'vocals'), gA) + _apply_gain(st(sb, 'vocals'), gB)
+    other = _apply_gain(other_a, volA) + _apply_gain(st(sb, 'other'), volB)
+    vocals = _apply_gain(voc_a, gA) + _apply_gain(st(sb, 'vocals'), gB)
     return drums + bass + other + vocals
 
 
@@ -513,6 +547,19 @@ def _splice(parts, sr: int, xf_sec: float = 0.05) -> np.ndarray:
     return out
 
 
+def _resolve_track(t) -> np.ndarray:
+    """A track may be a raw audio array OR a zero-arg callable (lazy loader).
+
+    Lazy loaders let a caller stream tracks off disk one at a time instead of
+    holding the whole playlist decoded in RAM — the set engine only ever needs
+    the current track and the next one, so at most two are resident at once.
+    Returns a stereo float32 array.
+    """
+    if callable(t):
+        t = t()
+    return _as_stereo(np.asarray(t)).astype(np.float32)
+
+
 def build_continuous_set(tracks,
                          sr: int = 44100,
                          blend_bars: int = 16,
@@ -536,24 +583,30 @@ def build_continuous_set(tracks,
     # produced -> lets a server stream the set progressively (start playback on the
     # first piece while the rest renders). The timeline is sample-contiguous, so
     # parts concatenate gaplessly with no crossfade needed.
-    _emit = on_part or (lambda p: None)
+    _emit = on_part or (lambda p, m=None: None)
+    # When streaming (on_part given), each part is copied into the caller's buffer
+    # as it is produced, so there is no need to also accumulate the whole timeline
+    # in RAM and splice a full-set array we'd only throw away. Skip it: a 30-min
+    # set then never lives in memory all at once (the producer flushes to disk).
+    accumulate = on_part is None
 
     n = len(tracks)
     if n == 0:
         return np.zeros((0, 2), dtype=np.float32), []
-    cur = _as_stereo(np.asarray(tracks[0])).astype(np.float32)
+    cur = _resolve_track(tracks[0])
     if n == 1:
         out = _headroom(cur).astype(np.float32)
-        _emit(out)
-        return out, [{"type": "track", "index": 0, "start_sec": 0.0, "end_sec": len(out) / sr}]
+        m0 = {"type": "track", "index": 0, "start_sec": 0.0, "end_sec": len(out) / sr}
+        _emit(out, m0)
+        return out, [m0]
 
-    timeline = []          # stereo parts to splice
+    timeline = []          # stereo parts to splice (only when not streaming)
     markers = []
     resume = 0.0           # seconds into `cur` where its audible body should begin
     pos = 0.0              # running output position (seconds), approximate (pre-splice)
 
     for i in range(n - 1):
-        nxt = _as_stereo(np.asarray(tracks[i + 1])).astype(np.float32)
+        nxt = _resolve_track(tracks[i + 1])
         grid_a = build_phrase_grid(cur, sr, phrase_bars=phrase_bars)
         grid_b0 = build_phrase_grid(nxt, sr, phrase_bars=phrase_bars)
 
@@ -574,9 +627,11 @@ def build_continuous_set(tracks,
         r0 = int(round(resume * sr))
         a_t1 = int(round(plan.a_t1_sec * sr))
         body = cur[max(0, r0):max(r0, a_t1)]
-        timeline.append(body); _emit(body)
-        markers.append({"type": "track", "index": i,
-                        "start_sec": pos, "end_sec": pos + len(body) / sr})
+        bmark = {"type": "track", "index": i,
+                 "start_sec": pos, "end_sec": pos + len(body) / sr}
+        if accumulate:
+            timeline.append(body)
+        markers.append(bmark); _emit(body, bmark)
         pos += len(body) / sr
 
         # Overlap blend (loudness-matched, bass-swapped, phrase-locked).
@@ -585,10 +640,12 @@ def build_continuous_set(tracks,
         seg_b = _fit_len(nxt[b_in:b_in + N], N)
         seg_b = _match_loudness(seg_a, seg_b, sr)
         overlap = (_render_overlap_stems if use_stems else _render_overlap)(seg_a, seg_b, plan, sr)
-        timeline.append(overlap); _emit(overlap)
-        markers.append({"type": "transition", "from": i, "to": i + 1,
-                        "transition_type": plan.transition_type,
-                        "start_sec": pos, "end_sec": pos + len(overlap) / sr})
+        tmark = {"type": "transition", "from": i, "to": i + 1,
+                 "transition_type": plan.transition_type,
+                 "start_sec": pos, "end_sec": pos + len(overlap) / sr}
+        if accumulate:
+            timeline.append(overlap)
+        markers.append(tmark); _emit(overlap, tmark)
         pos += len(overlap) / sr
 
         # Next track becomes current; it resumes just after the overlap.
@@ -599,9 +656,14 @@ def build_continuous_set(tracks,
 
     # Tail: last track from its resume point to the end.
     tail = cur[int(round(resume * sr)):]
-    timeline.append(tail); _emit(tail)
-    markers.append({"type": "track", "index": n - 1,
-                    "start_sec": pos, "end_sec": pos + len(tail) / sr})
+    tlmark = {"type": "track", "index": n - 1,
+              "start_sec": pos, "end_sec": pos + len(tail) / sr}
+    if accumulate:
+        timeline.append(tail)
+    markers.append(tlmark); _emit(tail, tlmark)
 
-    final = _headroom(_splice(timeline, sr)).astype(np.float32)
-    return final, markers
+    if accumulate:
+        final = _headroom(_splice(timeline, sr)).astype(np.float32)
+        return final, markers
+    # Streaming mode: the full set was emitted part-by-part and never held in RAM.
+    return np.zeros((0, 2), dtype=np.float32), markers

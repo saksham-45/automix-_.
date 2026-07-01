@@ -3,62 +3,145 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Club AutoMixer</title>
+<title>automix</title>
 <style>
-  :root { --bg:#0b0c10; --panel:#15171f; --accent:#7c5cff; --accent2:#22d3ee; --txt:#e8e8ee; --mut:#8b8fa3; }
-  * { box-sizing:border-box; }
-  body { margin:0; background:radial-gradient(1200px 600px at 50% -10%, #1a1030, var(--bg)); color:var(--txt);
-         font:15px/1.5 -apple-system,system-ui,Segoe UI,Roboto,sans-serif; min-height:100vh; }
-  .wrap { max-width:760px; margin:0 auto; padding:40px 20px 80px; }
-  h1 { font-size:26px; font-weight:700; letter-spacing:-.02em; margin:0 0 4px; }
-  .sub { color:var(--mut); margin:0 0 28px; }
-  .panel { background:var(--panel); border:1px solid #23262f; border-radius:16px; padding:20px; margin-bottom:18px; }
-  label { display:block; font-size:13px; color:var(--mut); margin:0 0 6px; }
-  input[type=text] { width:100%; padding:12px 14px; background:#0e0f15; border:1px solid #2a2d39; border-radius:10px;
-                     color:var(--txt); font-size:14px; }
-  .row { display:flex; gap:10px; align-items:center; margin-top:14px; flex-wrap:wrap; }
-  button { background:linear-gradient(135deg,var(--accent),#5b3fe0); color:#fff; border:0; padding:12px 18px;
-           border-radius:10px; font-size:14px; font-weight:600; cursor:pointer; }
-  button.ghost { background:#222533; }
-  button:disabled { opacity:.5; cursor:default; }
-  .bars { display:flex; align-items:center; gap:8px; color:var(--mut); font-size:13px; }
-  .bars input[type=range] { width:120px; }
-  #status { margin-top:14px; font-size:14px; color:var(--accent2); min-height:20px; }
-  .pbar { height:8px; background:#0e0f15; border-radius:6px; overflow:hidden; margin-top:14px; border:1px solid #2a2d39; }
-  .pbar > div { height:100%; width:0; background:linear-gradient(90deg,var(--accent2),var(--accent)); transition:width .2s; }
-  .timeline { display:flex; height:34px; border-radius:8px; overflow:hidden; margin-top:14px; border:1px solid #2a2d39; }
-  .seg { display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; white-space:nowrap; overflow:hidden; }
-  .seg.track { background:#3a3f55; color:#cfd3e6; }
-  .seg.transition { background:linear-gradient(135deg,var(--accent2),var(--accent)); color:#0b0c10; }
-  .nowplaying { margin-top:10px; font-size:14px; } .nowplaying b { color:var(--accent2); }
-  .legend { color:var(--mut); font-size:12px; margin-top:8px; }
+  :root{
+    --bg:#0b0b0c; --panel:#101012; --line:#1f1f23; --line2:#2b2b30;
+    --ink:#ececE8; --mut:#76767c; --dim:#3a3a40;
+    --accent:#c7a169;            /* the single accent — used only for the active deck & motion */
+  }
+  *{box-sizing:border-box}
+  html{-webkit-font-smoothing:antialiased}
+  body{margin:0; background:var(--bg); color:var(--ink); min-height:100vh;
+    font:15px/1.6 ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto,sans-serif}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace}
+  .wrap{max-width:880px; margin:0 auto; padding:56px 22px 96px}
+
+  header{margin-bottom:40px}
+  .logo{font:600 19px/1 ui-monospace,monospace; letter-spacing:-.01em; color:var(--ink); display:flex; align-items:center; gap:11px}
+  .logo i{width:7px;height:7px;border-radius:50%;background:var(--accent); display:inline-block}
+  .logo small{font-weight:500; letter-spacing:.22em; color:var(--mut); font-size:10px; text-transform:uppercase}
+  .lead{color:var(--mut); margin:16px 0 0; max-width:54ch; font-size:14.5px}
+
+  /* ---------------- the deck ---------------- */
+  .deck{border:1px solid var(--line); border-radius:4px; background:var(--panel); padding:30px 28px 26px; margin:34px 0 26px; position:relative}
+  .deckhead{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:30px}
+  .deckhead .l{font:500 10px/1 ui-monospace,monospace; letter-spacing:.28em; color:var(--mut); text-transform:uppercase}
+  #now{font:500 12px/1.4 ui-monospace,monospace; color:var(--mut); letter-spacing:.02em}
+  #now .on{color:var(--ink)} #now .ac{color:var(--accent)}
+
+  .row3{display:grid; grid-template-columns:1fr 92px 1fr; gap:22px; align-items:center; position:relative}
+  /* one continuous tape line threading both decks through the crossfader */
+  .row3::before{content:""; position:absolute; left:0; right:0; top:calc(50% + 14px); height:1px; background:var(--line2); z-index:0}
+
+  .cas{position:relative; z-index:1}
+  .cas .top{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px}
+  .cas .dk{font:600 11px/1 ui-monospace,monospace; letter-spacing:.24em; color:var(--mut); text-transform:uppercase; transition:color .25s}
+  .cas .nm{font:600 13px/1 ui-monospace,monospace; color:var(--dim); transition:color .25s}
+  .cas svg{display:block; width:100%; height:auto}
+  .cas .body{stroke:var(--dim); transition:stroke .25s}
+  .cas .tape{stroke:var(--dim); transition:stroke .25s, opacity .25s; opacity:.6}
+  .cas.active .dk{color:var(--accent)}
+  .cas.active .nm{color:var(--ink)}
+  .cas.active .body{stroke:var(--line2)}
+  .cas.active .tape{stroke:var(--accent); opacity:1}
+  .reel{transform-box:fill-box; transform-origin:center; will-change:transform}
+  .reel circle,.reel line{stroke:var(--mut)}
+  .cas.active .reel circle,.cas.active .reel line{stroke:var(--ink)}
+
+  /* center column: VU + crossfader */
+  .center{display:flex; flex-direction:column; align-items:center; gap:16px; z-index:1}
+  .vu{display:flex; gap:7px; height:64px; align-items:flex-end}
+  .vu .col{display:flex; flex-direction:column-reverse; gap:2px; width:5px; height:100%}
+  .vu .seg{flex:1; background:var(--dim); border-radius:1px; transition:background .06s}
+  .vulbl{display:flex; gap:7px; font:600 9px/1 ui-monospace,monospace; color:var(--mut)}
+  .vulbl span{width:5px; text-align:center}
+  .xf{width:100%; padding:0 2px}
+  .xftrack{position:relative; height:1px; background:var(--line2); margin:8px 0}
+  .xftrack i{position:absolute; top:-3px; width:1px; height:7px; background:var(--line2)}
+  .xftrack i.a{left:0} .xftrack i.b{right:0}
+  .xfknob{position:absolute; top:50%; left:50%; width:9px; height:18px; border-radius:2px; transform:translate(-50%,-50%);
+    background:var(--accent); transition:left .14s linear}
+  .xfends{display:flex; justify-content:space-between; font:600 9px/1 ui-monospace,monospace; color:var(--mut); letter-spacing:.1em}
+
+  /* ---------------- controls ---------------- */
+  .field{margin:0 0 18px}
+  label{display:block; font:500 10px/1 ui-monospace,monospace; letter-spacing:.2em; text-transform:uppercase; color:var(--mut); margin:0 0 9px}
+  input[type=text]{width:100%; padding:13px 14px; background:transparent; border:1px solid var(--line); border-radius:3px; color:var(--ink); font:14px/1.2 ui-monospace,monospace}
+  input[type=text]::placeholder{color:var(--dim)}
+  input[type=text]:focus{outline:none; border-color:var(--mut)}
+  .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+  .opt{display:flex; align-items:center; gap:9px; color:var(--mut); font:500 12px/1 ui-monospace,monospace; margin-right:auto}
+  .opt input[type=range]{width:104px; accent-color:var(--accent)}
+  .opt label.chk{display:inline-flex; align-items:center; gap:6px; text-transform:none; letter-spacing:0; margin:0; color:var(--mut)}
+  .opt input[type=checkbox]{accent-color:var(--accent)}
+  button{border:1px solid var(--line2); background:transparent; color:var(--ink); padding:11px 18px; border-radius:3px;
+    font:600 12px/1 ui-monospace,monospace; letter-spacing:.04em; cursor:pointer; transition:border-color .15s,background .15s}
+  button:hover{border-color:var(--mut)}
+  .btn-go{background:var(--ink); color:var(--bg); border-color:var(--ink)}
+  .btn-go:hover{background:#fff; border-color:#fff}
+  button:disabled{opacity:.4; cursor:default}
+  #status{margin-top:18px; font:500 12px/1.4 ui-monospace,monospace; color:var(--mut)}
+
+  .out{border-top:1px solid var(--line); margin-top:26px; padding-top:22px; display:none}
+  .pbar{height:1px; background:var(--line2); position:relative}
+  .pbar>div{position:absolute; left:0; top:-1px; height:3px; background:var(--accent); width:0; transition:width .2s}
+  .timeline{display:flex; height:22px; margin-top:18px; gap:1px}
+  .seg{display:flex; align-items:center; justify-content:center; font:600 10px/1 ui-monospace,monospace; overflow:hidden; white-space:nowrap; color:var(--mut)}
+  .seg.track{background:var(--line)}
+  .seg.transition{background:var(--accent); color:var(--bg)}
+  .legend{color:var(--dim); font:500 11px/1 ui-monospace,monospace; margin-top:10px; letter-spacing:.02em}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>🎛️ Club AutoMixer</h1>
-  <p class="sub">Paste a YouTube playlist — get one continuous, beat-matched, gapless club mix that starts instantly.</p>
+  <header>
+    <div class="logo"><i></i>automix<small>two-deck mixer</small></div>
+    <p class="lead">Two cassettes, one continuous take. Paste a playlist — or run the sample — and the crossfader hands the groove from deck A to deck B on every beat-matched transition.</p>
+  </header>
 
-  <div class="panel">
-    <label>YouTube playlist (or single video) URL</label>
-    <input id="url" type="text" placeholder="https://www.youtube.com/playlist?list=..."/>
-    <div class="row">
-      <div class="bars">Blend
-        <input id="bars" type="range" min="8" max="32" step="8" value="16"/>
-        <span id="barsval">16</span> bars</div>
-      <label class="bars" style="margin:0"><input id="stems" type="checkbox" checked/> demucs stems</label>
-      <button id="go">Mix &amp; Play</button>
-      <button id="sample" class="ghost">Try sample</button>
-      <button id="stop" class="ghost" style="display:none">Stop</button>
+  <!-- DECK -->
+  <div class="deck">
+    <div class="deckhead">
+      <span class="l">play</span>
+      <div id="now">idle — load a set</div>
     </div>
-    <div id="status"></div>
+    <div class="row3">
+      <div class="cas" id="casA"></div>
+      <div class="center">
+        <div class="vu"><div class="col" id="vuA"></div><div class="col" id="vuB"></div></div>
+        <div class="vulbl"><span>A</span><span>B</span></div>
+        <div class="xf">
+          <div class="xfends"><span>A</span><span>B</span></div>
+          <div class="xftrack"><i class="a"></i><i class="b"></i><div class="xfknob" id="xfknob"></div></div>
+        </div>
+      </div>
+      <div class="cas" id="casB"></div>
+    </div>
   </div>
 
-  <div class="panel" id="player" style="display:none">
+  <!-- CONTROLS -->
+  <div class="field">
+    <label>playlist or video url</label>
+    <input id="url" type="text" placeholder="https://www.youtube.com/playlist?list=…"/>
+  </div>
+  <div class="row">
+    <div class="opt">
+      <span>blend</span>
+      <input id="bars" type="range" min="8" max="32" step="8" value="16"/>
+      <span id="barsval" style="color:var(--ink)">16</span><span>bars</span>
+      <label class="chk" title="Separate stems with demucs for cleaner transitions. Slower on CPU."><input id="stems" type="checkbox"/> hq</label>
+    </div>
+    <button id="go" class="btn-go">Mix &amp; play</button>
+    <button id="sample">Sample</button>
+    <button id="stop" style="display:none">Stop</button>
+  </div>
+  <div id="status"></div>
+
+  <div class="out" id="player">
     <div class="pbar"><div id="fill"></div></div>
-    <div class="nowplaying" id="now"></div>
     <div class="timeline" id="timeline"></div>
-    <div class="legend">grey = track • gradient = beat-matched transition (hover for type)</div>
+    <div class="legend">track body · transition</div>
   </div>
 </div>
 
@@ -66,100 +149,187 @@
 const $ = s => document.querySelector(s);
 $("#bars").oninput = e => $("#barsval").textContent = e.target.value;
 
-let ctx, gain, sid, playing = false;
-let nextIdx = 0, nextTime = 0, t0 = 0, chunkSec = 4, statusInfo = {};
+/* ---------- minimal cassette (line-art) ---------- */
+function reel(id){
+  let spokes="";
+  for(let k=0;k<3;k++){const a=k*60*Math.PI/180;
+    spokes+=`<line x1="${(-22*Math.cos(a)).toFixed(1)}" y1="${(-22*Math.sin(a)).toFixed(1)}" x2="${(22*Math.cos(a)).toFixed(1)}" y2="${(22*Math.sin(a)).toFixed(1)}" stroke-width="1.2"/>`;
+  }
+  return `<g id="${id}" class="reel">
+    <circle r="26" fill="none" stroke-width="1.2"/>
+    ${spokes}
+    <circle r="8" fill="var(--bg)" stroke-width="1.2"/>
+  </g>`;
+}
+function cassette(deck){
+  return `
+  <div class="top"><span class="dk">deck ${deck}</span><span class="nm" id="nm${deck}">—</span></div>
+  <svg viewBox="0 0 300 150" aria-hidden="true">
+    <rect class="body" x="2" y="2" width="296" height="146" rx="6" fill="none" stroke-width="1.2"/>
+    <line class="body" x1="2" y1="46" x2="298" y2="46" stroke-width="1"/>
+    <text class="mono" x="16" y="32" font-size="11" letter-spacing="2" fill="var(--mut)">AUTOMIX · C-90</text>
+    <text id="num${deck}" class="mono" x="284" y="33" text-anchor="end" font-size="15" font-weight="600" fill="var(--mut)">—</text>
+    <g transform="translate(96,100)">${reel("reel"+deck+"L")}</g>
+    <g transform="translate(204,100)">${reel("reel"+deck+"R")}</g>
+    <line class="tape" x1="96" y1="100" x2="204" y2="100" stroke-width="1.4"/>
+  </svg>`;
+}
+$("#casA").innerHTML = cassette("A");
+$("#casB").innerHTML = cassette("B");
 
-async function start(body) {
+/* VU */
+const VU_N = 12;
+function buildVU(el){ el.innerHTML=""; for(let i=0;i<VU_N;i++){const d=document.createElement("div"); d.className="seg"; el.appendChild(d);} }
+buildVU($("#vuA")); buildVU($("#vuB"));
+const C_INK=getComputedStyle(document.documentElement).getPropertyValue("--ink").trim();
+const C_ACC=getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+const C_DIM=getComputedStyle(document.documentElement).getPropertyValue("--dim").trim();
+function paintVU(el, level){
+  const segs=el.children, lit=Math.round(level*VU_N);
+  for(let i=0;i<VU_N;i++) segs[i].style.background = i<lit ? (i>=VU_N-2?C_ACC:C_INK) : C_DIM;
+}
+
+/* ---------- streaming engine (logic unchanged) ---------- */
+let ctx, gain, analyser, td, sid, gen=0;
+let nextIdx=0, nextTime=0, t0=0, started=false, tlLen=0, statusInfo={};
+const PREBUFFER=4, LOOKAHEAD=12;
+const scheduled=new Set();
+let raf=0, deckTrack=[null,null], angL=0, angR=0, lastT=0, smoothXF=0, smoothLvl=0;
+
+function fail(m){ $("#status").textContent="✗ "+m; resetButtons(); }
+function resetButtons(){ $("#go").disabled=$("#sample").disabled=false; $("#stop").style.display="none"; }
+function stopAll(){ gen++; cancelAnimationFrame(raf); if(ctx){ try{ctx.close();}catch(_){} ctx=null; }
+  paintVU($("#vuA"),0); paintVU($("#vuB"),0); $("#casA").classList.remove("active"); $("#casB").classList.remove("active"); }
+$("#stop").onclick=()=>{ stopAll(); $("#status").textContent="stopped"; $("#now").textContent="idle"; resetButtons(); };
+
+async function start(body){
   stopAll();
-  $("#player").style.display = "none";
-  $("#status").textContent = "starting…";
-  $("#go").disabled = $("#sample").disabled = true;
-  ctx = new (window.AudioContext || window.webkitAudioContext)();
-  gain = ctx.createGain(); gain.gain.value = 1.0; gain.connect(ctx.destination);
-  try {
-    const r = await fetch("/api/set/start", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
-    const j = await r.json();
-    if (j.error) throw new Error(j.error);
-    sid = j.session_id; nextIdx = 0; nextTime = 0; playing = true;
-    $("#stop").style.display = "inline-block";
-    pollAndPump();
-  } catch (e) { fail(e.message); }
+  const myGen=++gen;
+  nextIdx=0; nextTime=0; t0=0; started=false; tlLen=0; statusInfo={}; scheduled.clear();
+  deckTrack=[null,null]; angL=0; angR=0; smoothXF=0; smoothLvl=0;
+  $("#player").style.display="none"; $("#timeline").innerHTML=""; $("#now").textContent="cueing…";
+  $("#status").textContent="starting…"; $("#go").disabled=$("#sample").disabled=true; $("#stop").style.display="inline-block";
+  ctx=new (window.AudioContext||window.webkitAudioContext)();
+  gain=ctx.createGain(); gain.gain.value=1.0;
+  analyser=ctx.createAnalyser(); analyser.fftSize=1024; td=new Uint8Array(analyser.fftSize);
+  gain.connect(analyser); analyser.connect(ctx.destination);
+  lastT=performance.now(); animate(myGen);
+  try{
+    const r=await fetch("/api/set/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const j=await r.json(); if(j.error) throw new Error(j.error);
+    sid=j.session_id; loop(myGen);
+  }catch(e){ fail(e.message); }
+}
+async function fetchDecode(i){
+  const r=await fetch(`/api/set/${sid}/chunk/${i}`); if(r.status!==200) return null;
+  try{ return await ctx.decodeAudioData(await r.arrayBuffer()); }catch(_){ return null; }
+}
+async function loop(myGen){
+  if(myGen!==gen) return;
+  try{ statusInfo=await fetch("/api/set/"+sid).then(r=>r.json()); }catch(_){}
+  if(myGen!==gen) return;
+  if(statusInfo.status==="error") return fail(statusInfo.error||"render failed");
+  const ready=statusInfo.chunks_ready||0, total=statusInfo.chunk_count, chunkSec=statusInfo.chunk_sec||4;
+  if(!started && (ready>=PREBUFFER || (total!=null && ready>=total))){
+    started=true; t0=ctx.currentTime+0.3; nextTime=t0; $("#player").style.display="block";
+  }
+  if(started){
+    while(myGen===gen && nextIdx<ready && nextTime<ctx.currentTime+LOOKAHEAD){
+      if(scheduled.has(nextIdx)){ nextIdx++; continue; }
+      const buf=await fetchDecode(nextIdx); if(myGen!==gen) return; if(!buf) break;
+      if(nextTime<ctx.currentTime) nextTime=ctx.currentTime+0.05;
+      const src=ctx.createBufferSource(); src.buffer=buf; src.connect(gain); src.start(nextTime);
+      scheduled.add(nextIdx); nextTime+=buf.duration; nextIdx++;
+    }
+  }
+  const markers=statusInfo.markers||[];
+  if(markers.length!==tlLen){ buildTimeline(markers); tlLen=markers.length; }
+  if(started){
+    const elapsed=Math.max(0,ctx.currentTime-t0);
+    const denom=(total!=null?total*chunkSec:Math.max(elapsed,(markers.length?markers[markers.length-1].end_sec:1)));
+    $("#fill").style.width=Math.min(100,100*elapsed/Math.max(denom,1))+"%";
+    $("#status").textContent= statusInfo.status==="ready" ? `set ready — ${statusInfo.n_tracks} tracks` : "playing — rendering ahead";
+  }else{
+    $("#status").textContent=(statusInfo.status||"working")+" — buffering "+ready+"/"+PREBUFFER;
+  }
+  const finished=total!=null && nextIdx>=total;
+  if(finished){ $("#status").textContent="set complete"; resetButtons(); return; }
+  setTimeout(()=>loop(myGen),200);
 }
 
-function fail(m){ $("#status").textContent = "✗ " + m; $("#go").disabled=$("#sample").disabled=false; $("#stop").style.display="none"; }
-function stopAll(){ playing=false; if(ctx){ try{ctx.close();}catch(_){} ctx=null; } }
-$("#stop").onclick = () => { stopAll(); $("#status").textContent="⏹ stopped"; $("#go").disabled=$("#sample").disabled=false; $("#stop").style.display="none"; };
-
-async function getStatus(){ const r = await fetch("/api/set/"+sid); return r.json(); }
-
-async function pollAndPump(){
-  if(!playing) return;
-  try { statusInfo = await getStatus(); } catch(_){}
-  chunkSec = statusInfo.chunk_sec || 4;
-  if (statusInfo.status === "error") return fail(statusInfo.error || "render failed");
-
-  if (!$("#player").style.display || $("#player").style.display === "none") {
-    if ((statusInfo.chunks_ready||0) >= 1) { $("#player").style.display = "block"; }
-  }
-  const ready = statusInfo.chunks_ready || 0;
-  const total = statusInfo.chunk_count;            // null until finished
-  $("#status").textContent = statusInfo.status === "ready"
-    ? `▶ playing full set — ${statusInfo.n_tracks} tracks`
-    : "⏳ " + statusInfo.status + " (rendering ahead…)";
-
-  // schedule any available chunks, keeping ~8s buffered ahead
-  while (playing && nextIdx < ready && nextTime < ctx.currentTime + 8) {
-    try {
-      const ab = await (await fetch(`/api/set/${sid}/chunk/${nextIdx}`)).arrayBuffer();
-      const buf = await ctx.decodeAudioData(ab);
-      const src = ctx.createBufferSource(); src.buffer = buf; src.connect(gain);
-      if (nextTime < ctx.currentTime) nextTime = ctx.currentTime + 0.12; // first chunk / underrun
-      if (nextIdx === 0) t0 = nextTime;
-      src.start(nextTime);
-      nextTime += buf.duration;
-      nextIdx++;
-    } catch (e) { break; }
-  }
-
-  // progress + now-playing
-  if (ctx && t0 > 0) {
-    const elapsed = Math.max(0, ctx.currentTime - t0);
-    if (total) $("#fill").style.width = Math.min(100, 100*elapsed/(total*chunkSec)) + "%";
-    updateNow(elapsed);
-  }
-  if (statusInfo.status === "ready" && statusInfo.markers && !$("#timeline").dataset.built) buildTimeline(statusInfo);
-
-  const finished = total != null && nextIdx >= total;
-  if (finished) { $("#status").textContent = "✓ set complete"; $("#stop").style.display="none"; $("#go").disabled=$("#sample").disabled=false; return; }
-  setTimeout(pollAndPump, 250);
+/* even tracks live on deck A, odd on deck B */
+function deckState(elapsed, markers){
+  if(!markers.length) return {xf:smoothXF};
+  const m=markers.find(m=>elapsed>=m.start_sec && elapsed<m.end_sec)||markers[markers.length-1];
+  if(m.type==="track"){ deckTrack[m.index%2]=m.index; return {xf:(m.index%2)===0?0:1, track:m.index, trans:false}; }
+  const frac=Math.min(1,Math.max(0,(elapsed-m.start_sec)/Math.max(.01,m.end_sec-m.start_sec)));
+  deckTrack[m.from%2]=m.from; deckTrack[m.to%2]=m.to;
+  return {xf:(m.from%2)===0?frac:1-frac, from:m.from, to:m.to, trans:true, ttype:m.transition_type};
 }
 
-function buildTimeline(j){
-  const tl = $("#timeline"); tl.innerHTML = ""; tl.dataset.built = "1";
-  const dur = j.markers[j.markers.length-1].end_sec || 1;
-  j.markers.forEach(m => {
-    const d = document.createElement("div");
-    d.className = "seg " + m.type;
-    d.style.width = Math.max(0,(m.end_sec-m.start_sec)/dur*100) + "%";
-    d.title = m.type==="transition" ? `transition (${m.transition_type})` : `track ${m.index+1}`;
-    d.textContent = m.type==="transition" ? "↔" : ("T"+(m.index+1));
+function animate(myGen){
+  if(myGen!==gen) return;
+  const now=performance.now(), dt=Math.min(.05,(now-lastT)/1000); lastT=now;
+  let rms=0;
+  if(analyser && started){ analyser.getByteTimeDomainData(td);
+    let s=0; for(let i=0;i<td.length;i++){const v=(td[i]-128)/128; s+=v*v;} rms=Math.sqrt(s/td.length); }
+  smoothLvl += (Math.min(1,rms*3.2)-smoothLvl)*0.25;
+
+  const markers=statusInfo.markers||[];
+  const elapsed=(started&&ctx)?Math.max(0,ctx.currentTime-t0):0;
+  const st=deckState(elapsed,markers);
+  smoothXF += ((st.xf??smoothXF)-smoothXF)*0.12;
+  $("#xfknob").style.left=(smoothXF*100)+"%";
+
+  const lvlA=smoothLvl*(1-smoothXF), lvlB=smoothLvl*smoothXF;
+  paintVU($("#vuA"),lvlA); paintVU($("#vuB"),lvlB);
+  const spinA=started?(0.4+lvlA*4.0):0, spinB=started?(0.4+lvlB*4.0):0;
+  angL+=spinA*360*dt; angR+=spinB*360*dt;
+  setRot("reelAL",angL); setRot("reelAR",angL); setRot("reelBL",angR); setRot("reelBR",angR);
+
+  setLabel("A",deckTrack[0]); setLabel("B",deckTrack[1]);
+  $("#casA").classList.toggle("active", started && smoothXF<0.5);
+  $("#casB").classList.toggle("active", started && smoothXF>=0.5);
+
+  if(started && markers.length){
+    if(st.trans){
+      const fd=(st.from%2)===0, tdk=(st.to%2)===0;
+      const f=`<span class="ac">${fd?'A':'B'}·${("0"+(st.from+1)).slice(-2)}</span>`;
+      const t=`<span class="ac">${tdk?'A':'B'}·${("0"+(st.to+1)).slice(-2)}</span>`;
+      $("#now").innerHTML=`${f} → ${t}  <span class="on">${st.ttype||"blend"}</span>`;
+    }else{
+      const d=(st.track%2===0)?'A':'B';
+      $("#now").innerHTML=`<span class="ac">deck ${d}</span> <span class="on">track ${("0"+(st.track+1)).slice(-2)}</span>`;
+    }
+  }
+  raf=requestAnimationFrame(()=>animate(myGen));
+}
+function setRot(id,deg){ const g=document.getElementById(id); if(g) g.style.transform=`rotate(${deg%360}deg)`; }
+function setLabel(deck,t){
+  const num=document.getElementById("num"+deck), nm=document.getElementById("nm"+deck);
+  const txt=t==null?"—":("0"+(t+1)).slice(-2);
+  if(num) num.textContent=txt; if(nm) nm.textContent= t==null?"—":("trk "+txt);
+}
+
+function buildTimeline(markers){
+  const tl=$("#timeline"); tl.innerHTML="";
+  if(!markers.length) return;
+  const dur=markers[markers.length-1].end_sec||1;
+  markers.forEach(m=>{
+    const d=document.createElement("div"); d.className="seg "+m.type;
+    d.style.width=Math.max(0.5,(m.end_sec-m.start_sec)/dur*100)+"%";
+    d.title=m.type==="transition"?`transition (${m.transition_type})`:`track ${m.index+1}`;
+    d.textContent=m.type==="transition"?"":("T"+(m.index+1));
     tl.appendChild(d);
   });
 }
-function updateNow(elapsed){
-  const m = (statusInfo.markers||[]).find(m => elapsed>=m.start_sec && elapsed<m.end_sec);
-  if (m) $("#now").innerHTML = m.type==="transition"
-      ? `🔀 <b>transition</b> (${m.transition_type}) — track ${m.from+1} → ${m.to+1}`
-      : `▶️ <b>track ${m.index+1}</b>`;
-  else $("#now").innerHTML = `▶️ playing… (${elapsed.toFixed(0)}s)`;
-}
 
-$("#go").onclick = () => {
-  const url = $("#url").value.trim();
-  if (!url) { $("#status").textContent = "enter a playlist URL (or Try sample)"; return; }
+$("#go").onclick=()=>{
+  const url=$("#url").value.trim();
+  if(!url){ $("#status").textContent="enter a url, or run the sample"; return; }
   start({url, blend_bars:+$("#bars").value, use_stems:$("#stems").checked});
 };
-$("#sample").onclick = () => start({files:["__SAMPLE__"], blend_bars:+$("#bars").value, use_stems:$("#stems").checked});
+$("#sample").onclick=()=>start({files:["__SAMPLE__"], blend_bars:+$("#bars").value, use_stems:$("#stems").checked});
 </script>
 </body>
 </html>
